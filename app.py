@@ -112,18 +112,6 @@ if "ledger" not in st.session_state:
     ])
 if "last_angle" not in st.session_state: st.session_state.last_angle = 0
 
-# ---------- Bootstrap from Sheets once ----------
-if "bootstrapped" not in st.session_state:
-    df_remote, err = load_ledger_from_sheets()
-    if err:
-        st.sidebar.info("Sheets not loaded (check secrets or access). Running with local session state.")
-    else:
-        # adopt remote ledger and recalc counters
-        if not df_remote.empty:
-            st.session_state.ledger = df_remote
-        st.session_state.renown, st.session_state.notoriety = recalc_totals(st.session_state.ledger)
-    st.session_state.bootstrapped = True
-
 # ---------- Google Sheets (via Streamlit secrets) ----------
 @st.cache_resource(show_spinner=False)
 def _build_gspread_client(sa_json: dict):
@@ -223,6 +211,17 @@ def recalc_totals(df: pd.DataFrame):
     r = int(pd.to_numeric(df.get("renown_gain", pd.Series()), errors="coerce").fillna(0).sum())
     n = int(pd.to_numeric(df.get("notoriety_gain", pd.Series()), errors="coerce").fillna(0).sum())
     return r, n
+
+# ---------- Bootstrap from Sheets once ----------
+if "bootstrapped" not in st.session_state:
+    df_remote, err = load_ledger_from_sheets()
+    if err:
+        st.sidebar.info("Sheets not loaded (check secrets or access). Running with local session state.")
+    else:
+        if not df_remote.empty:
+            st.session_state.ledger = df_remote
+        st.session_state.renown, st.session_state.notoriety = recalc_totals(st.session_state.ledger)
+    st.session_state.bootstrapped = True
 
 # ---------- Mechanics ----------
 def clamp(v, lo, hi): return max(lo, min(hi, v))

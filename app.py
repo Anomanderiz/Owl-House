@@ -473,10 +473,9 @@ with st.sidebar:
 MURAL_B64 = load_b64_first(
     "assets/mural_sidebar.png",
     "assets/mural.png",
-    "/mnt/data/Gemini_Generated_Image_bu3d1ibu3d1ibu3d.png"  # fallback: the file you uploaded
 )
 
-MURAL_H      = 560      # height of the mural area in px (tune to taste)
+MURAL_H      = 1120      # height of the mural area in px (tune to taste)
 MURAL_OPACITY = 0.22    # 0 = invisible, 1 = opaque
 
 st.sidebar.markdown(f"""

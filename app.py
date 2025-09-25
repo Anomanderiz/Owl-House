@@ -497,18 +497,14 @@ st.sidebar.markdown(f"""
   opacity: {MURAL_OPACITY};
   pointer-events: none;            /* don't block clicks/scrolls */
   filter: drop-shadow(0 6px 12px rgba(0,0,0,.25));
-  /* Optional vibe:
-     mix-blend-mode: screen;
-  */
+  mix-blend-mode: multiply;           /* or 'overlay' */
+  background-color: #0E1226;          /* pushes the mural navy toward the sidebar base */
+  /* optional fine-tune */
+  filter: brightness(.9) saturate(1.1) hue-rotate(-6deg);
 }}
 </style>
 <div id="sidebar-mural" aria-hidden="true"></div>
 """, unsafe_allow_html=True)
-
-mix-blend-mode: multiply;           /* or 'overlay' */
-background-color: #0E1226;          /* pushes the mural navy toward the sidebar base */
-/* optional fine-tune */
-filter: brightness(.9) saturate(1.1) hue-rotate(-6deg);
 
 # ---------- KPI score cards (click to reveal tiers) ----------
 RENOWN_TRIGGER_LABEL = "RENOWN_SCORE_CARD__CLICK"

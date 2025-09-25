@@ -434,42 +434,118 @@ with tab2:
 # ---------- Tab 3 ----------
 with tab3:
     st.markdown("### Wheel of Misfortune")
-    heat_state = "High" if st.session_state.notoriety>=10 else "Low"
-    st.caption(f"Heat: **{heat_state}**")
-    table_path = "assets/complications_high.json" if heat_state=="High" else "assets/complications_low.json"
-    options = json.load(open(table_path,"r"))
 
-    def draw_wheel(labels, colors=None, size=600):
-        n = len(labels); img = Image.new("RGBA",(size,size),(0,0,0,0)); d = ImageDraw.Draw(img)
-        cx,cy=size//2,size//2; r=size//2-6; cols=colors or ["#173b5a","#12213f","#0d3b4f","#112b44"]
-        for i,_ in enumerate(labels):
-            start=360*i/len(labels)-90; end=360*(i+1)/len(labels)-90
-            d.pieslice([cx-r,cy-r,cx+r,cy+r],start,end,fill=cols[i%len(cols)],outline="#213a53")
-        d.ellipse([cx-r,cy-r,cx+r,cy+r], outline="#d0a85c", width=6)
-        try: font=ImageFont.truetype("DejaVuSans.ttf",14)
-        except: font=ImageFont.load_default()
-        for i,lab in enumerate(labels):
-            ang=math.radians(360*(i+.5)/len(labels)-90)
-            tx=cx+int((r-60)*math.cos(ang)); ty=cy+int((r-60)*math.sin(ang))
-            d.text((tx,ty),lab, fill="#eae7e1", font=font, anchor="mm")
+    # --- Sizing ---
+    WHEEL_SIZE = 600  # change this one number to resize the wheel
+    SPIN_ROTATIONS = random.randint(4, 7)  # theatrical feel without a UI slider
+
+    # --- Heat → table ---
+    heat_state = "High" if st.session_state.notoriety >= 10 else "Low"
+    st.caption(f"Heat: **{heat_state}**")
+    table_path = "assets/complications_high.json" if heat_state == "High" else "assets/complications_low.json"
+    options = json.load(open(table_path, "r"))
+
+    # --- Styling just for this tab ---
+    st.markdown(f"""
+    <style>
+    /* Center the wheel container and size it */
+    #wheel_container {{
+      position: relative; width: {WHEEL_SIZE}px; height: {WHEEL_SIZE}px; margin: 0 auto;
+    }}
+    #wheel_img {{
+      width: 100%; height: 100%; border-radius: 50%;
+      box-shadow: 0 10px 40px rgba(0,0,0,.55);
+      background: radial-gradient(closest-side, rgba(255,255,255,0.06), transparent);
+    }}
+    #pointer {{
+      position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+      width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent;
+      border-bottom: 26px solid {GOLD}; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4));
+    }}
+
+    /* Spin button area centered under wheel */
+    .spin-wrap {{ display: flex; justify-content: center; margin-top: calc({WHEEL_SIZE}px * -0.10); }}
+    /* make the Streamlit button circular & glassy */
+    .spin-wrap + div button {{
+      width: 120px; height: 120px; border-radius: 60px;
+      border: 1px solid rgba(208,168,92,0.45);
+      background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+      backdrop-filter: blur(8px) saturate(1.1);
+      -webkit-backdrop-filter: blur(8px) saturate(1.1);
+      box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,0.06);
+      color: {IVORY}; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+    }}
+    .spin-wrap + div button:hover {{
+      transform: translateY(-1px);
+      box-shadow: 0 14px 36px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,0.09);
+    }}
+
+    /* Result card */
+    .result-card {{
+      max-width: min(900px, 90vw); margin: 24px auto 0 auto; padding: 16px 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(208,168,92,0.35);
+      background: rgba(14,18,38,0.72);
+      backdrop-filter: blur(10px) saturate(1.05);
+      -webkit-backdrop-filter: blur(10px) saturate(1.05);
+      box-shadow: 0 18px 40px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,0.05);
+    }}
+    .result-number {{
+      font-weight: 700; color: {GOLD}; opacity: .95; margin-bottom: 4px;
+      font-size: clamp(14px, 1.2vw, 16px);
+    }}
+    .result-text {{
+      color: {IVORY}; line-height: 1.35; white-space: pre-wrap;
+      font-size: clamp(16px, 1.8vw, 22px);
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+
+    # --- Wheel drawing ---
+    def draw_wheel(labels, colors=None, size=WHEEL_SIZE):
+        n = len(labels)
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        cx, cy = size // 2, size // 2; r = size // 2 - 6
+        cols = colors or ["#173b5a", "#12213f", "#0d3b4f", "#112b44"]
+        for i, _ in enumerate(labels):
+            start = 360 * i / n - 90; end = 360 * (i + 1) / n - 90
+            d.pieslice([cx - r, cy - r, cx + r, cy + r], start, end, fill=cols[i % len(cols)], outline="#213a53")
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], outline="#d0a85c", width=6)
+        try:
+            font = ImageFont.truetype("DejaVuSans.ttf", 14)
+        except:
+            font = ImageFont.load_default()
+        for i, lab in enumerate(labels):
+            ang = math.radians(360 * (i + .5) / n - 90)
+            tx = cx + int((r - 60) * math.cos(ang)); ty = cy + int((r - 60) * math.sin(ang))
+            d.text((tx, ty), lab, fill="#eae7e1", font=font, anchor="mm")
         return img
 
     def b64(img):
-        buf=io.BytesIO(); img.save(buf, format="PNG"); import base64
+        buf = io.BytesIO(); img.save(buf, format="PNG"); import base64
         return base64.b64encode(buf.getvalue()).decode("utf-8")
 
-    wheel_b64 = b64(draw_wheel([str(i+1) for i in range(len(options))]))
-    SPIN_ROTATIONS = random.randint(4, 7)
+    wheel_b64 = b64(draw_wheel([str(i+1) for i in range(len(options))], size=WHEEL_SIZE))
 
-    if st.button("Spin!", type="primary"):
-        n=len(options); idx=random.randrange(n)
-        st.session_state.selected_index=idx
-        seg=360/n; st.session_state.last_angle=default_spins*360+(idx+.5)*seg
-        comp=options[idx]
-        row=[dt.datetime.now().isoformat(timespec="seconds"), ward_focus, "Complication", "-", "-", "-", 0,0,"-","-",comp]
+    # --- Spin action (button below) ---
+    # marker div to help CSS target the next Streamlit button
+    st.markdown("<div class='spin-wrap' aria-hidden='true'>&nbsp;</div>", unsafe_allow_html=True)
+
+    if st.button("Spin!", key="spin_btn_primary"):
+        n = len(options)
+        idx = random.randrange(n)
+        st.session_state.selected_index = idx
+        seg = 360 / n
+        st.session_state.last_angle = SPIN_ROTATIONS * 360 + (idx + .5) * seg
+
+        comp = options[idx]
+        row = [dt.datetime.now().isoformat(timespec="seconds"), ward_focus, "Complication",
+               "-", "-", "-", 0, 0, "-", "-", comp]
         st.session_state.ledger.loc[len(st.session_state.ledger)] = row
 
-    angle=st.session_state.last_angle
+    # --- Render wheel + animate to last angle ---
+    angle = st.session_state.last_angle
     html = f"""
     <div style="text-align:center">
       <div id="wheel_container">
@@ -479,13 +555,21 @@ with tab3:
     </div>
     <script>
     const w = window.parent.document.querySelector('#wheel_img') || document.getElementById('wheel_img');
-    if (w) {{ w.style.transition = 'transform 3.2s cubic-bezier(.17,.67,.32,1.35)'; requestAnimationFrame(()=>{{ w.style.transform='rotate({angle}deg)'; }}); }}
+    if (w) {{ w.style.transition = 'transform 3.2s cubic-bezier(.17,.67,.32,1.35)';
+              requestAnimationFrame(()=>{{ w.style.transform='rotate({angle}deg)'; }}); }}
     </script>
     """
-    st.components.v1.html(html, height=600)
+    st.components.v1.html(html, height=WHEEL_SIZE + 40)
+
+    # --- Result card ---
     if st.session_state.get("selected_index") is not None:
-        idx=st.session_state["selected_index"]
-        st.markdown(f"**Result:** {idx+1}. {options[idx]}")
+        idx = st.session_state["selected_index"]
+        st.markdown(f"""
+        <div class="result-card">
+          <div class="result-number">Result {idx+1:02d} / {len(options):02d}</div>
+          <div class="result-text">{options[idx]}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
 # ---------- Tab 4 ----------
 with tab4:

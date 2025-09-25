@@ -152,10 +152,10 @@ def show_notoriety_tiers():
       <table class="tier-table">
         <tr><th>Band</th><th>Score</th><th>City response (mechanical pressure, no identity reveal)</th></tr>
         <tr><td class="tt-badge">N0 — Cold</td><td>0–4</td><td>Nothing special.</td></tr>
-        <tr><td class="tt-badge">N1 — Warm</td><td>5–9</td><td><b>Ward sweeps</b>: after jobs in hot wards, DC 12 group Stealth/Deception or a patrol drifts close (minor time loss or +1 heat if ignored).</td></tr>
+        <tr><td class="tt-badge">N1 — Warm</td><td>5–9</td><td><b>Ward sweeps</b>: after jobs in hot wards, DC X group Stealth/Deception or a patrol drifts close (minor time loss or +1 heat if ignored).</td></tr>
         <tr><td class="tt-badge">N2 — Hot</td><td>10–14</td><td><b>Pattern watch</b>: repeat MOs get +2 DCs; weekly bag checks on kits/disguises—fail adds +1 heat.</td></tr>
         <tr><td class="tt-badge">N3 — Scalding</td><td>15–19</td><td><b>Counter-ops</b>: rivals interfere 1 in 3 missions; residue detectors appear; reusing looks puts Disguise kits at disadvantage.</td></tr>
-        <tr><td class="tt-badge">N4 — Burning</td><td>20–24</td><td><b>Scry-sweeps</b>: wide-angle divinations; any arcane casting during ops risks a Trace test (DC 14 Arcana/Stealth). Fail = +2 heat and a tail to the scene.</td></tr>
+        <tr><td class="tt-badge">N4 — Burning</td><td>20–24</td><td><b>Scry-sweeps</b>: wide-angle divinations; any arcane casting during ops risks a Trace test (DC X Arcana/Stealth). Fail = +2 heat and a tail to the scene.</td></tr>
         <tr><td class="tt-badge">N5 — Inferno</td><td>25–30</td><td><b>Citywide dragnet</b>: curfews in hot wards; +2 DC to stealth/social; a bounty is posted for any intel on “the impostors”.</td></tr>
       </table>
     </div>
@@ -631,7 +631,7 @@ with tab2:
 
 # ---------- Tab 3 ----------
 with tab3:
-    st.markdown("### Wheel of Misfortune")
+    st.markdown("### Wheel of Fortune")
 
     # ---------- defaults & palette ----------
     st.session_state.setdefault("last_angle", 0)

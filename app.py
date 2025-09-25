@@ -45,13 +45,32 @@ NOTORIETY_IMG_B64 = load_b64_first(
     "/mnt/data/bd0e7b0b-2ded-4272-8cd4-4753e0d0c8c8.png"  # fallback
 )
 
+st.markdown("""
+<style>
+/* Let KPI cards breathe; stop columns from cropping the bottom edge/shadow */
+.kpi-card, .score-card{
+  padding-bottom: 20px !important;
+  margin-bottom: 12px !important;
+  overflow: visible !important;
+}
+/* Streamlit column wrappers can clip children; allow overflow */
+[data-testid="column"] > div:has(.kpi-card),
+[data-testid="column"] > div:has(.score-card){
+  overflow: visible !important;
+  padding-bottom: 8px !important; /* extra room below the card */
+}
+</style>
+""", unsafe_allow_html=True)
+
 def score_card(title: str, value: int, img_b64: str, trigger_label: str, dom_id: str):
     """Pretty, clickable KPI card; clicking fires a hidden Streamlit button."""
     html = '''
     <style>
       .score-card {
+        box-sizing: border-box;
         position: relative; display: grid; grid-template-columns: 72px 1fr;
-        gap: 12px; align-items: center; padding: 12px 14px;
+        gap: 12px; align-items: center;
+        padding: 12px 14px 18px; /* +6px bottom so nothing gets shaved off */
         background: rgba(14,18,38,0.60);
         border: 1px solid rgba(208,168,92,0.35);
         border-radius: 18px;
@@ -60,7 +79,8 @@ def score_card(title: str, value: int, img_b64: str, trigger_label: str, dom_id:
       }
       .score-card:hover { box-shadow: 0 0 0 2px rgba(208,168,92,.25) inset; }
       .score-card img {
-        width: 72px; height: 72px; object-fit: contain; filter: drop-shadow(0 6px 12px rgba(0,0,0,.35));
+        width: 72px; height: 72px; object-fit: contain;
+        filter: drop-shadow(0 6px 12px rgba(0,0,0,.35));
       }
       .score-card .meta .label { font-size: 14px; color: __IVORY__; opacity: .9; letter-spacing: .6px; }
       .score-card .meta .val {
@@ -79,30 +99,26 @@ def score_card(title: str, value: int, img_b64: str, trigger_label: str, dom_id:
       (function(){
         try {
           const btns = window.parent.document.querySelectorAll('button');
-          for (const b of btns) {
-            if ((b.innerText || '').trim() === '__TRIGGER__') b.style.display = 'none';
-          }
-        } catch(e) {}
-        const card = document.getElementById('__DOMID__');
-        card?.addEventListener('click', () => {
-          try {
-            const btns = window.parent.document.querySelectorAll('button');
-            for (const b of btns) {
-              if ((b.innerText || '').trim() === '__TRIGGER__') { b.click(); break; }
-            }
-          } catch(e) {}
+          for (const b of btns) if ((b.innerText||'').trim()==='__TRIGGER__') b.style.display='none';
+        } catch(e){}
+        const card=document.getElementById('__DOMID__');
+        card?.addEventListener('click',()=>{
+          try{
+            const btns=window.parent.document.querySelectorAll('button');
+            for(const b of btns){ if((b.innerText||'').trim()==='__TRIGGER__'){ b.click(); break; } }
+          }catch(e){}
         });
       })();
     </script>
     '''
-    html = (html
-            .replace('__IVORY__', IVORY)
-            .replace('__TITLE__', str(title))
-            .replace('__VALUE__', str(value))
-            .replace('__IMG__', img_b64)
-            .replace('__TRIGGER__', trigger_label)
-            .replace('__DOMID__', dom_id))
-    st.components.v1.html(html, height=96)
+    html=(html
+          .replace('__IVORY__', IVORY)
+          .replace('__TITLE__', str(title))
+          .replace('__VALUE__', str(value))
+          .replace('__IMG__', img_b64)
+          .replace('__TRIGGER__', trigger_label)
+          .replace('__DOMID__', dom_id))
+    st.components.v1.html(html, height=112)  # was 96; prevents bottom clipping
 
 def show_renown_tiers():
     html = '''

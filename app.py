@@ -205,8 +205,8 @@ with st.sidebar:
     st.markdown("""
     <div class="welcome">
       <h3>Night Owls</h3>
-      <p>By moonlight take flight,
-      By your deed will the city be freed.
+      <p>By moonlight take flight,\n
+      By your deed will the city be freed.\n
       You give a hoot!</p>
     </div>
     """, unsafe_allow_html=True)

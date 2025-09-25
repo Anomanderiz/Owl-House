@@ -454,7 +454,8 @@ with tab3:
         cols = colors or ["#173b5a", "#12213f", "#0d3b4f", "#112b44"]
         for i, _ in enumerate(labels):
             start = 360 * i / n - 90; end = 360 * (i + 1) / n - 90
-            d.pieslice([cx - r, cy - r, cx + r, cy + r], start, end, fill=cols[i % len(cols)], outline="#213a53")
+            d.pieslice([cx - r, cy - r, cx + r, cy + r], start, end,
+                       fill=cols[i % len(cols)], outline="#213a53")
         d.ellipse([cx - r, cy - r, cx + r, cy + r], outline="#d0a85c", width=6)
         try:   font = ImageFont.truetype("DejaVuSans.ttf", 14)
         except: font = ImageFont.load_default()
@@ -471,7 +472,7 @@ with tab3:
     wheel_b64 = b64(draw_wheel([str(i+1) for i in range(len(options))], size=WHEEL_SIZE))
 
     # -------- Hidden Streamlit trigger (we'll click it from the overlay) --------
-    HIDDEN_LABEL = "__SPIN_TRIGGER__73ab__"
+    HIDDEN_LABEL = "SPIN_TRIGGER__73ab"   # match exactly what we will hide in JS
     hidden_clicked = st.button(HIDDEN_LABEL, key="spin_hidden_internal")
 
     if hidden_clicked:
@@ -489,8 +490,8 @@ with tab3:
     angle = st.session_state.last_angle
     btn_diam = max(96, int(WHEEL_SIZE * 0.18))
 
-    # -------- Wheel + true center overlay button --------
-    html = f"""
+    # -------- Wheel + centered overlay button + result card styles --------
+    st.markdown(f"""
     <style>
       #wheel_wrap {{
         position: relative; width: {WHEEL_SIZE}px; margin: 0 auto;
@@ -509,9 +510,6 @@ with tab3:
         border-bottom: 26px solid {GOLD}; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4));
       }}
 
-      /* Hide the real trigger button by label */
-      /* JS will do the actual hiding (CSS can't match innerText reliably) */
-
       #spin_overlay {{
         position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
         width: {btn_diam}px; height: {btn_diam}px; border-radius: {btn_diam/2}px;
@@ -524,47 +522,67 @@ with tab3:
         cursor: pointer; user-select: none; display: grid; place-items: center;
       }}
       #spin_overlay:hover {{ transform: translate(-50%,-50%) scale(1.02); }}
-    </style>
 
+      /* Result card */
+      .result-card {{
+        max-width: min(1100px, 92vw); margin: 18px auto 0 auto; padding: 16px 18px;
+        border-radius: 18px;
+        border: 1px solid rgba(208,168,92,0.35);
+        background: rgba(14,18,38,0.72);
+        backdrop-filter: blur(10px) saturate(1.05);
+        -webkit-backdrop-filter: blur(10px) saturate(1.05);
+        box-shadow: 0 18px 40px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,0.05);
+      }}
+      .result-number {{
+        font-weight: 700; color: {GOLD}; opacity: .95; margin-bottom: 4px;
+        font-size: clamp(14px, 1.2vw, 16px);
+      }}
+      .result-text {{
+        color: {IVORY}; line-height: 1.35; white-space: pre-wrap;
+        font-size: clamp(16px, 1.8vw, 22px);
+      }}
+    </style>
+    """, unsafe_allow_html=True)
+
+    # -------- HTML: wheel + overlay + robust hiding of side button --------
+    html = f"""
     <div id="wheel_wrap">
       <div id="wheel_container">
         <div id="pointer"></div>
         <img id="wheel_img" src="data:image/png;base64,{wheel_b64}" />
-        <div id="spin_overlay">Spin!</div>
+        <div id="spin_overlay">SPIN!</div>
       </div>
     </div>
 
     <script>
-      // Hide the real Streamlit trigger button
       (function() {{
+        const label = '{HIDDEN_LABEL}';
+        // Hide any Streamlit button whose innerText contains the label
         const btns = window.parent.document.querySelectorAll('button');
         for (const b of btns) {{
-          if (b.innerText.trim() === '{HIDDEN_LABEL}') {{
+          const txt = (b.innerText || '').trim();
+          if (txt.includes(label)) {{
             b.style.display = 'none';
-            break;
+            window._hiddenSpinBtn = b;
           }}
         }}
-      }})();
-
-      // Overlay → click hidden Streamlit button
-      document.getElementById('spin_overlay').addEventListener('click', () => {{
-        const btns = window.parent.document.querySelectorAll('button');
-        for (const b of btns) {{
-          if (b.innerText.trim() === '{HIDDEN_LABEL}') {{ b.click(); break; }}
+        // Overlay → click hidden Streamlit button
+        const overlay = document.getElementById('spin_overlay');
+        overlay.addEventListener('click', () => {{
+          if (window._hiddenSpinBtn) window._hiddenSpinBtn.click();
+        }});
+        // Animate wheel to latest angle
+        const w = document.getElementById('wheel_img');
+        if (w) {{
+          w.style.transition = 'transform 3.2s cubic-bezier(.17,.67,.32,1.35)';
+          requestAnimationFrame(() => {{ w.style.transform = 'rotate({angle}deg)'; }});
         }}
-      }});
-
-      // Animate wheel to latest angle
-      const w = document.getElementById('wheel_img');
-      if (w) {{
-        w.style.transition = 'transform 3.2s cubic-bezier(.17,.67,.32,1.35)';
-        requestAnimationFrame(() => {{ w.style.transform = 'rotate({angle}deg)'; }});
-      }}
+      }})();
     </script>
     """
     st.components.v1.html(html, height=WHEEL_SIZE + 40)
 
-    # --- Result card ---
+    # -------- Result card --------
     if st.session_state.get("selected_index") is not None:
         idx = st.session_state["selected_index"]
         st.markdown(f"""

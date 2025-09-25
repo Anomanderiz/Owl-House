@@ -312,7 +312,10 @@ with tab2:
     if st.button("Append All Rows to Sheets", type="secondary"):
         rows = st.session_state.ledger.values.tolist()
         ok, err = append_to_google_sheet(rows)
-        st.success(f"Appended {len(rows)} rows.") if ok else st.error(f"Sheets error: {err}")
+        if ok:
+            st.success(f"Appended {len(rows)} rows.")
+        else:
+            st.error(f"Sheets error: {err or 'Unknown error'}")
 
 # ---------- Tab 3 ----------
 with tab3:

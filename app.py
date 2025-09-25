@@ -435,6 +435,173 @@ with tab2:
 with tab3:
     st.markdown("### Wheel of Misfortune")
 
+    # --- Sizing & feel ---
+    WHEEL_SIZE = 600                         # change this to resize the wheel
+    SPIN_ROTATIONS = random.randint(4, 7)    # theatrical feel
+
+    # --- Heat → pick table ---
+    heat_state = "High" if st.session_state.notoriety >= 10 else "Low"
+    st.caption(f"Heat: **{heat_state}**")
+    table_path = "assets/complications_high.json" if heat_state == "High" else "assets/complications_low.json"
+    options = json.load(open(table_path, "r"))
+
+    # ---------- draw wheel ----------
+    def draw_wheel(labels, colors=None, size=WHEEL_SIZE):
+        n = len(labels)
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        cx, cy = size // 2, size // 2; r = size // 2 - 6
+        cols = colors or ["#173b5a", "#12213f", "#0d3b4f", "#112b44"]
+        for i, _ in enumerate(labels):
+            start = 360 * i / n - 90; end = 360 * (i + 1) / n - 90
+            d.pieslice([cx - r, cy - r, cx + r, cy + r], start, end, fill=cols[i % len(cols)], outline="#213a53")
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], outline="#d0a85c", width=6)
+        try:   font = ImageFont.truetype("DejaVuSans.ttf", 14)
+        except: font = ImageFont.load_default()
+        for i, lab in enumerate(labels):
+            ang = math.radians(360 * (i + .5) / n - 90)
+            tx = cx + int((r - 60) * math.cos(ang)); ty = cy + int((r - 60) * math.sin(ang))
+            d.text((tx, ty), lab, fill="#eae7e1", font=font, anchor="mm")
+        return img
+
+    def b64(img):
+        buf = io.BytesIO(); img.save(buf, format="PNG"); import base64
+        return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    wheel_b64 = b64(draw_wheel([str(i+1) for i in range(len(options))], size=WHEEL_SIZE))
+
+    # ---------- hidden Streamlit button (real trigger for Python) ----------
+    # We hide this button in the DOM and click it from the overlay via JS.
+    hidden_clicked = st.button("HiddenSpin", key="spin_hidden_internal")
+
+    if hidden_clicked:
+        n = len(options)
+        idx = random.randrange(n)
+        st.session_state.selected_index = idx
+        seg = 360 / n
+        st.session_state.last_angle = SPIN_ROTATIONS * 360 + (idx + .5) * seg
+
+        comp = options[idx]
+        row = [dt.datetime.now().isoformat(timespec="seconds"), ward_focus, "Complication",
+               "-", "-", "-", 0, 0, "-", "-", comp]
+        st.session_state.ledger.loc[len(st.session_state.ledger)] = row
+
+    angle = st.session_state.last_angle
+
+    # ---------- HTML: wheel + truly centered overlay button ----------
+    btn_diam = max(96, int(WHEEL_SIZE * 0.18))  # button scales with wheel
+    html = f"""
+    <style>
+      /* container */
+      #wheel_wrap {{
+        position: relative;
+        width: {WHEEL_SIZE}px;
+        margin: 0 auto;
+      }}
+      #wheel_container {{
+        position: relative;
+        width: {WHEEL_SIZE}px; height: {WHEEL_SIZE}px;
+      }}
+      #wheel_img {{
+        width: 100%; height: 100%;
+        border-radius: 50%;
+        box-shadow: 0 10px 40px rgba(0,0,0,.55);
+        background: radial-gradient(closest-side, rgba(255,255,255,0.06), transparent);
+      }}
+      #pointer {{
+        position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+        width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent;
+        border-bottom: 26px solid {GOLD}; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4));
+      }}
+
+      /* hide the real Streamlit trigger button */
+      button:has(> span:contains("HiddenSpin")), button:contains("HiddenSpin") {{
+        display: none !important;
+      }}
+
+      /* overlay button centered on wheel */
+      #spin_overlay {{
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+        width: {btn_diam}px; height: {btn_diam}px; border-radius: {btn_diam/2}px;
+        border: 1px solid rgba(208,168,92,0.45);
+        background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+        backdrop-filter: blur(8px) saturate(1.1);
+        -webkit-backdrop-filter: blur(8px) saturate(1.1);
+        box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,0.06);
+        color: {IVORY}; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+        cursor: pointer; user-select: none;
+      }}
+      #spin_overlay:hover {{ transform: translate(-50%,-50%) scale(1.02); }}
+    </style>
+
+    <div id="wheel_wrap">
+      <div id="wheel_container">
+        <div id="pointer"></div>
+        <img id="wheel_img" src="data:image/png;base64,{wheel_b64}" />
+        <div id="spin_overlay">Spin</div>
+      </div>
+    </div>
+
+    <script>
+      // Click overlay -> click the hidden Streamlit button in parent document
+      const overlay = document.getElementById('spin_overlay');
+      overlay.addEventListener('click', () => {{
+        const btns = window.parent.document.querySelectorAll('button');
+        for (const b of btns) {{
+          if (b.innerText.trim() === 'HiddenSpin') {{ b.click(); break; }}
+        }}
+      }});
+
+      // Animate wheel to latest angle
+      const w = document.getElementById('wheel_img');
+      if (w) {{
+        w.style.transition = 'transform 3.2s cubic-bezier(.17,.67,.32,1.35)';
+        requestAnimationFrame(() => {{ w.style.transform = 'rotate({angle}deg)'; }});
+      }}
+    </script>
+    """
+    st.components.v1.html(html, height=WHEEL_SIZE + 40)
+
+    # ---------- Result card ----------
+    if st.session_state.get("selected_index") is not None:
+        idx = st.session_state["selected_index"]
+        st.markdown(f"""
+        <div class="result-card">
+          <div class="result-number">Result {idx+1:02d} / {len(options):02d}</div>
+          <div class="result-text">{options[idx]}</div>
+        </div>
+        """, unsafe_allow_html=True)
+Why this works
+
+The overlay button is ordinary HTML absolutely positioned at the geometric center of the wheel container.
+
+Clicking it programmatically clicks the hidden Streamlit button (HiddenSpin), which triggers your Python spin logic. No guessing about Streamlit’s layout wrappers.
+
+The overlay scales with WHEEL_SIZE (btn_diam), so it stays proportional.
+
+If you prefer the button to say “Spin!” instead of “Spin”, change the overlay <div id="spin_overlay">Spin</div> text—no other changes needed.
+
+
+
+
+
+
+
+You said:
+
+
+ChatGPT said:
+
+Thought for 1m 16s
+Yep—your “Spin!” at top-left is the real Streamlit button. We’ll hide it and use a true center overlay that clicks a hidden trigger.
+
+Drop this in place of your current Wheel tab. It’s self-contained and reliable.
+
+python
+Copy code
+with tab3:
+    st.markdown("### Wheel of Misfortune")
+
     # --- sizing & feel ---
     WHEEL_SIZE = 600
     SPIN_ROTATIONS = random.randint(4, 7)

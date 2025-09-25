@@ -313,7 +313,7 @@ with hc2:
             st.success("Heat −1 and logged.")
         else:
             st.warning(f"Logged locally but not synced: {err or 'check secrets/permissions'}")
-tab1, tab2, tab3, tab4 = st.tabs(["🗺️ Mission Generator","🎯 Resolve & Log","☸️ Wheel of Misfortune","📜 Ledger"])
+tab1, tab2, tab3, tab4 = st.tabs(["🗺️ Mission Generator","🎯 Resolve & Log","☸️ Wheel of Fortune","📜 Ledger"])
 
 # ---------- Tab 1 ----------
 with tab1:

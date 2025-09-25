@@ -433,7 +433,7 @@ with tab2:
 
 # ---------- Tab 3 ----------
 with tab3:
-    st.markdown("### Wheel of Misfortune")
+    st.markdown("### Wheel of Fortune")
 
     # --- Sizing & feel ---
     WHEEL_SIZE = 600                       # resize the wheel here

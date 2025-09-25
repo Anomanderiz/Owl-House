@@ -605,7 +605,7 @@ with tab3:
           .result-text {{
             color: {IVORY}; line-height: 1.5; font-size: 16px;
           }}
-          @keyframes fadein {{ from {{ opacity: 0; transform: translateY(6px);}} } to {{ opacity:1; transform:none;}} }}
+          @keyframes fadein {{ from {{ opacity: 0; transform: translateY(6px);} } to {{ opacity:1; transform:none;} }}
         </style>
         <div class="result-card">
           <div class="result-number">Result {idx+1:02d} / {len(options):02d}</div>

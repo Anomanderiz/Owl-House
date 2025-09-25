@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,6 +6,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 st.set_page_config(page_title="Night Owls — Waterdeep Secret Club", page_icon="🦉", layout="wide")
 
+# ---------- Assets ----------
 def load_b64(path):
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode("utf-8")
@@ -16,8 +16,10 @@ LOGO = Image.open("assets/logo.png")
 
 GOLD = "#d0a85c"; IVORY = "#eae7e1"
 
+# ---------- Styles (Glass + Welcome card) ----------
 st.markdown(f"""
 <style>
+@import url("https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English+SC&display=swap");
 :root {{
   --glass-bg: rgba(12,17,40,0.62);
   --glass-alt: rgba(15,22,50,0.68);
@@ -78,10 +80,21 @@ h1, h2, h3, h4 {{ color: {IVORY}; text-shadow: 0 1px 0 rgba(0,0,0,0.35); }}
 }}
 .dataframe tbody tr {{ background: rgba(10,15,36,0.35); }}
 .dataframe thead tr {{ background: rgba(10,15,36,0.55); }}
+
+/* Welcome card in sidebar */
+.welcome {{
+  border: 1px solid rgba(208,168,92,0.35);
+  border-radius: 18px;
+  padding: 1rem 1.1rem;
+  background: rgba(14,18,38,0.70);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04), 0 10px 30px rgba(0,0,0,0.35);
+}}
+.welcome h3 {{ font-family: "Cinzel Decorative", serif; color: {IVORY}; margin: 0 0 .35rem 0; }}
+.welcome p {{ font-family: "IM Fell English SC", serif; font-size: 1.05rem; line-height: 1.3; color: {IVORY}; opacity: .92; }}
 </style>
 """, unsafe_allow_html=True)
 
-# ---- State ----
+# ---------- State ----------
 if "renown" not in st.session_state: st.session_state.renown = 0
 if "notoriety" not in st.session_state: st.session_state.notoriety = 0
 if "ledger" not in st.session_state:
@@ -91,7 +104,7 @@ if "ledger" not in st.session_state:
     ])
 if "last_angle" not in st.session_state: st.session_state.last_angle = 0
 
-# ---- Google Sheets ----
+# ---------- Google Sheets (via Streamlit secrets) ----------
 @st.cache_resource(show_spinner=False)
 def _build_gspread_client(sa_json: dict):
     import gspread
@@ -100,22 +113,66 @@ def _build_gspread_client(sa_json: dict):
     creds = Credentials.from_service_account_info(sa_json, scopes=scopes)
     return gspread.authorize(creds)
 
-def append_to_google_sheet(sa_json, sheet_id, rows: list, worksheet_name="Log"):
+def _load_sheets_secrets():
+    """
+    Expect .streamlit/secrets.toml with:
+
+    [sheets]
+    sheet_id = "YOUR_SHEET_ID"
+    worksheet = "Log"         # optional, defaults to "Log"
+
+    [gcp_service_account]     # full service-account JSON fields
+    type = "service_account"
+    project_id = "..."
+    private_key_id = "..."
+    private_key = "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
+    client_email = "..."
+    client_id = "..."
+    token_uri = "https://oauth2.googleapis.com/token"
+    """
     try:
+        sa_json = dict(st.secrets["gcp_service_account"])
+        cfg = st.secrets["sheets"]
+        sheet_id = cfg.get("sheet_id", "")
+        ws_name = cfg.get("worksheet", "Log")
+        if not (sa_json and sheet_id):
+            return None, None, None, "Missing gcp_service_account or sheets.sheet_id in secrets."
+        return sa_json, sheet_id, ws_name, None
+    except Exception as e:
+        return None, None, None, str(e)
+
+def _ensure_worksheet(sa_json, sheet_id, worksheet_name="Log"):
+    try:
+        import gspread
         gc = _build_gspread_client(sa_json)
         sh = gc.open_by_key(sheet_id)
         try:
-            ws = sh.worksheet(worksheet_name)
-        except Exception:
+            sh.worksheet(worksheet_name)
+        except gspread.exceptions.WorksheetNotFound:
             ws = sh.add_worksheet(title=worksheet_name, rows="1000", cols="20")
             ws.append_row(list(st.session_state.ledger.columns))
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+def append_to_google_sheet(rows: list):
+    sa_json, sheet_id, ws_name, err = _load_sheets_secrets()
+    if err:
+        return False, err
+    ok, err = _ensure_worksheet(sa_json, sheet_id, worksheet_name=ws_name)
+    if not ok:
+        return False, err
+    try:
+        gc = _build_gspread_client(sa_json)
+        sh = gc.open_by_key(sheet_id)
+        ws = sh.worksheet(ws_name)
         for r in rows:
             ws.append_row(r, value_input_option="USER_ENTERED")
         return True, None
     except Exception as e:
         return False, str(e)
 
-# ---- Mechanics ----
+# ---------- Mechanics ----------
 def clamp(v, lo, hi): return max(lo, min(hi, v))
 def heat_multiplier(n): return 1.5 if n>=20 else (1.25 if n>=10 else 1.0)
 def renown_from_score(base, arc): return int(round(base * {"Help the Poor":1.0,"Sabotage Evil":1.5,"Expose Corruption":2.0}[arc]))
@@ -134,40 +191,36 @@ def compute_EI(vals):
     return (vis+noise+sig+wit+mag)-(conc+mis)
 def low_or_high(n): return "High" if n>=10 else "Low"
 
-# ---- Sidebar ----
+# ---------- Sidebar (Welcome only) ----------
 with st.sidebar:
     st.image(LOGO, use_column_width=True)
-    st.markdown("### Google Sheets")
-    sheet_id = st.text_input("Sheet ID")
-    sa_mode = st.radio("Service Account", ["Upload JSON","Paste JSON"], horizontal=True)
-    sa_json = None
-    if sa_mode=="Upload JSON":
-        up = st.file_uploader("service_account.json", type=["json"])
-        if up: sa_json = json.loads(up.read().decode("utf-8"))
-    else:
-        sa_text = st.text_area("Paste JSON here")
-        if sa_text.strip():
-            try: sa_json = json.loads(sa_text)
-            except: st.error("Invalid JSON")
-    ws_name = st.text_input("Worksheet name", value="Log")
-    if st.button("Test Sheets"):
-        if sa_json and sheet_id:
-            ok, err = append_to_google_sheet(sa_json, sheet_id, [], worksheet_name=ws_name)
-            st.success("OK") if ok else st.error(err)
-    st.markdown("---")
-    if st.button("Lie Low (−1/−2 Heat)"):
-        drop = 2 if st.session_state.notoriety>=10 else 1
-        st.session_state.notoriety = max(0, st.session_state.notoriety-drop)
+    st.markdown("""
+    <div class="welcome">
+      <h3>Night Owls</h3>
+      <p>By moonlit benevolence and masked mercy, the city breathes.
+      Guide clandestine deeds, weigh renown against heat, and let fortune’s wheel whisper complications.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-# ---- KPIs ----
+# ---------- KPIs ----------
 c1,c2,c3 = st.columns(3)
 with c1: st.markdown(f"<div class='kpi'><h4>Renown</h4><div style='font-size:28px'>{st.session_state.renown}</div></div>", unsafe_allow_html=True)
 with c2: st.markdown(f"<div class='kpi'><h4>Notoriety</h4><div style='font-size:28px'>{st.session_state.notoriety}</div></div>", unsafe_allow_html=True)
 with c3: ward_focus = st.selectbox("Active Ward", ["Dock","Field","South","North","Castle","Trades","Sea"])
 
+# Small heat controls (moved out of sidebar)
+hc1, hc2 = st.columns(2)
+with hc1:
+    if st.button("Lie Low (−1/−2 Heat)"):
+        drop = 2 if st.session_state.notoriety>=10 else 1
+        st.session_state.notoriety = max(0, st.session_state.notoriety-drop)
+with hc2:
+    if st.button("Proxy Charity (−1 Heat)"):
+        st.session_state.notoriety = max(0, st.session_state.notoriety-1)
+
 tab1, tab2, tab3, tab4 = st.tabs(["🗺️ Mission Generator","🎯 Resolve & Log","☸️ Wheel of Misfortune","📜 Ledger"])
 
-# ---- Tab 1 ----
+# ---------- Tab 1 ----------
 with tab1:
     st.markdown("### Create a Mission")
     arc = st.radio("Archetype", ["Help the Poor","Sabotage Evil","Expose Corruption"], horizontal=True)
@@ -187,14 +240,16 @@ with tab1:
         proof = col2.checkbox("Hard Proof / Magical Corroboration (+1 OQM)")
         reused = col3.checkbox("Reused Signature (−1 OQM)")
         inputs = {"expose_level":expose}
+
     st.markdown("#### Execution")
     e1,e2,e3 = st.columns(3)
     with e1: margin = st.number_input("Success Margin",0,20,2)
     with e2: nat20 = st.checkbox("Natural 20")
     with e3: nat1 = st.checkbox("Critical botch")
     EB = 3 if nat20 else (2 if margin>=5 else (1 if margin>=1 else 0))
+
     OQM = []
-    if arc=="Help the Poor": 
+    if arc=="Help the Poor":
         if plan: OQM.append(+1)
     if arc=="Sabotage Evil":
         if plan: OQM.append(+1)
@@ -202,9 +257,11 @@ with tab1:
     if arc=="Expose Corruption":
         if proof: OQM.append(+1)
         if reused: OQM.append(-1)
+
     BI = compute_BI(arc, inputs)
     base_score = compute_base_score(BI, EB, OQM)
     st.markdown(f"**Base Impact:** {BI} • **EB:** {EB} • **OQM sum:** {sum(OQM)} → **Base Score:** {base_score}")
+
     st.markdown("#### Exposure Index")
     a,b = st.columns(2)
     with a:
@@ -216,20 +273,25 @@ with tab1:
         mag = st.slider("Magic Trace (0–2)",0,2,0)
         conc = st.slider("Concealment (0–3)",0,3,2)
         mis = st.slider("Misdirection (0–2)",0,2,1)
+
     EI = (vis+noise+sig+wit+mag)-(conc+mis)
     ren_gain = int(round(base_score * {"Help the Poor":1.0,"Sabotage Evil":1.5,"Expose Corruption":2.0}[arc]))
+    def _hm(n): return 1.5 if n>=20 else (1.25 if n>=10 else 1.0)
     cat_base = {"Help the Poor":1,"Sabotage Evil":2,"Expose Corruption":3}[arc]
-    def heat_multiplier(n): return 1.5 if n>=20 else (1.25 if n>=10 else 1.0)
-    heat = max(0, math.ceil((cat_base + max(0,EI-1) + (1 if nat1 else 0)) * heat_multiplier(st.session_state.notoriety)))
+    heat = max(0, math.ceil((cat_base + max(0,EI-1) + (1 if nat1 else 0)) * _hm(st.session_state.notoriety)))
     if nat20: heat = max(0, heat-1)
+
     st.markdown(f"**Projected Renown:** {ren_gain} • **Projected Notoriety:** {heat} • **EI:** {EI}")
+
     if st.button("Queue Mission → Resolve & Log", type="primary"):
-        st.session_state._queued_mission = dict(ward=ward_focus, archetype=arc, BI=BI, EB=EB, OQM=sum(OQM),
+        st.session_state._queued_mission = dict(
+            ward=ward_focus, archetype=arc, BI=BI, EB=EB, OQM=sum(OQM),
             renown_gain=ren_gain, notoriety_gain=heat,
-            EI_breakdown={"visibility":vis,"noise":noise,"signature":sig,"witnesses":wit,"magic":mag,"concealment":conc,"misdirection":mis})
+            EI_breakdown={"visibility":vis,"noise":noise,"signature":sig,"witnesses":wit,"magic":mag,"concealment":conc,"misdirection":mis}
+        )
         st.success("Mission queued.")
 
-# ---- Tab 2 ----
+# ---------- Tab 2 ----------
 with tab2:
     st.markdown("### Resolve Mission & Write to Log")
     q = st.session_state.get("_queued_mission")
@@ -245,20 +307,21 @@ with tab2:
             st.success("Applied and logged.")
     else:
         st.info("No queued mission.")
-    st.markdown("#### Push Log to Google Sheets")
-    if st.button("Append All Rows"):
-        sheet_id = st.session_state.get("sheet_id", None) or st.sidebar.text_input
-        st.sidebar
-    if st.button("Append All Pending Rows to Sheets", type="secondary"):
-        st.write("Use the sidebar controls above to connect to Sheets.")
 
-# ---- Tab 3 ----
+    st.markdown("#### Push Log to Google Sheets")
+    if st.button("Append All Rows to Sheets", type="secondary"):
+        rows = st.session_state.ledger.values.tolist()
+        ok, err = append_to_google_sheet(rows)
+        st.success(f"Appended {len(rows)} rows.") if ok else st.error(f"Sheets error: {err}")
+
+# ---------- Tab 3 ----------
 with tab3:
     st.markdown("### Wheel of Misfortune")
     heat_state = "High" if st.session_state.notoriety>=10 else "Low"
     st.caption(f"Heat: **{heat_state}**")
     table_path = "assets/complications_high.json" if heat_state=="High" else "assets/complications_low.json"
     options = json.load(open(table_path,"r"))
+
     def draw_wheel(labels, colors=None, size=540):
         n = len(labels); img = Image.new("RGBA",(size,size),(0,0,0,0)); d = ImageDraw.Draw(img)
         cx,cy=size//2,size//2; r=size//2-6; cols=colors or ["#173b5a","#12213f","#0d3b4f","#112b44"]
@@ -273,18 +336,22 @@ with tab3:
             tx=cx+int((r-60)*math.cos(ang)); ty=cy+int((r-60)*math.sin(ang))
             d.text((tx,ty),lab, fill="#eae7e1", font=font, anchor="mm")
         return img
+
     def b64(img):
         buf=io.BytesIO(); img.save(buf, format="PNG"); import base64
         return base64.b64encode(buf.getvalue()).decode("utf-8")
+
     wheel_b64 = b64(draw_wheel([str(i+1) for i in range(len(options))]))
     default_spins = st.slider("Spin rotations",3,8,5)
+
     if st.button("Spin!", type="primary"):
         n=len(options); idx=random.randrange(n)
         st.session_state.selected_index=idx
         seg=360/n; st.session_state.last_angle=default_spins*360+(idx+.5)*seg
         comp=options[idx]
-        row=[dt.datetime.now().isoformat(timespec="seconds"), "Ward", "Complication", "-", "-", "-", 0,0,"-","-",comp]
+        row=[dt.datetime.now().isoformat(timespec="seconds"), ward_focus, "Complication", "-", "-", "-", 0,0,"-","-",comp]
         st.session_state.ledger.loc[len(st.session_state.ledger)] = row
+
     angle=st.session_state.last_angle
     html = f"""
     <div style="text-align:center">
@@ -303,7 +370,7 @@ with tab3:
         idx=st.session_state["selected_index"]
         st.markdown(f"**Result:** {idx+1}. {options[idx]}")
 
-# ---- Tab 4 ----
+# ---------- Tab 4 ----------
 with tab4:
     st.markdown("### Ledger")
     st.dataframe(st.session_state.ledger, use_container_width=True, height=420)

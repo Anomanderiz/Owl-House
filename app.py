@@ -92,11 +92,13 @@ h1, h2, h3, h4 {{ color: {IVORY}; text-shadow: 0 1px 0 rgba(0,0,0,0.35); }}
 .welcome h3 {{ font-family: "Cinzel Decorative", serif; color: {IVORY}; margin: 0 0 .35rem 0; }}
 .welcome p {{ font-family: "IM Fell English SC", serif; font-size: 1.05rem; line-height: 1.3; color: {IVORY}; opacity: .92; }}
 /* Hide Streamlit top bar / header / footer / menu */
-header, footer, #MainMenu {visibility: hidden;}
-[data-testid="stToolbar"] {visibility: hidden; height: 0; position: fixed;}
-
+header, footer, #MainMenu {{ visibility: hidden; }}
+[data-testid="stToolbar"] {{ visibility: hidden; height: 0; position: fixed; }}
 /* tighten top spacing a hair since the header is gone */
-.main .block-container { padding-top: 0.8rem !important; }
+.main .block-container {{ padding-top: 0.8rem !important; }}
+
+/* extra belt-and-suspenders for newer builds */
+div[data-testid="stHeader"] {{ display: none; }}
 </style>
 """, unsafe_allow_html=True)
 

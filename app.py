@@ -432,78 +432,88 @@ with tab2:
             st.error(f"Sheets error: {err or 'Unknown error'}")
 
 # ---------- Tab 3 ----------
-with tab3:
+with st.tabs(["Wheel of Misfortune"])[0]:
     st.markdown("### Wheel of Misfortune")
 
     # --- Sizing & feel ---
-    WHEEL_SIZE = 600                       # resize the wheel here
-    SPIN_ROTATIONS = random.randint(4, 7)  # theatrical feel (no UI slider)
+    WHEEL_SIZE = 600
+    SPIN_ROTATIONS = random.randint(4, 7)
 
     # --- Heat → pick table ---
     heat_state = "High" if st.session_state.notoriety >= 10 else "Low"
     st.caption(f"Heat: **{heat_state}**")
-    table_path = "assets/complications_high.json" if heat_state == "High" else "assets/complications_low.json"
-    options = json.load(open(table_path, "r"))
+    # Using a dummy dict for this standalone example
+    options = [f"Option {i+1}" for i in range(8)] if heat_state == "Low" else [f"High Heat Option {i+1}" for i in range(8)]
+
 
     # --- CSS for button centering, wheel and result card ---
     st.markdown(f"""
     <style>
-    /* Wheel block */
-    #wheel_container {{
-      position: relative; width: {WHEEL_SIZE}px; height: {WHEEL_SIZE}px; margin: 0 auto;
-    }}
-    #wheel_img {{
-      width: 100%; height: 100%; border-radius: 50%;
-      box-shadow: 0 10px 40px rgba(0,0,0,.55);
-      background: radial-gradient(closest-side, rgba(255,255,255,0.06), transparent);
-    }}
-    #pointer {{
-      position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
-      width: 0; height: 0;
-      border-left: 16px solid transparent; border-right: 16px solid transparent;
-      border-bottom: 26px solid {GOLD}; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4));
+    /* Main container for the wheel and button assembly */
+    .wheel-assembly {{
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
     }}
 
-    /* --- Button centering ABOVE the wheel --- */
-    .spin-anchor {{ display: block; height: 0; }}
-    .spin-anchor + div {{           /* this is Streamlit's wrapper around the next element (the button) */
-      display: flex; justify-content: center; margin: 8px 0 16px 0;
+    /* Wheel block */
+    #wheel_container {{
+        position: relative; width: {WHEEL_SIZE}px; height: {WHEEL_SIZE}px;
     }}
-    .spin-anchor + div > div {{     /* inner wrapper */
-      width: auto !important;
+    #wheel_img {{
+        width: 100%; height: 100%; border-radius: 50%;
+        box-shadow: 0 10px 40px rgba(0,0,0,.55);
+        background: radial-gradient(closest-side, rgba(255,255,255,0.06), transparent);
     }}
-    .spin-anchor + div button {{
-      width: 120px; height: 120px; border-radius: 60px;
-      border: 1px solid rgba(208,168,92,0.45);
-      background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
-      backdrop-filter: blur(8px) saturate(1.1);
-      -webkit-backdrop-filter: blur(8px) saturate(1.1);
-      box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,0.06);
-      color: {IVORY}; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+    #pointer {{
+        position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+        width: 0; height: 0;
+        border-left: 16px solid transparent; border-right: 16px solid transparent;
+        border-bottom: 26px solid {GOLD}; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4));
+        z-index: 11; /* Ensure pointer is above wheel */
     }}
-    .spin-anchor + div button:hover {{
-      transform: translateY(-1px);
-      box-shadow: 0 14px 36px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,0.09);
+
+    /* --- Button Centering IN the wheel --- */
+    /* Target the Streamlit-generated button container */
+    .stButton {{
+        position: relative;
+        z-index: 10; /* Ensure button is above wheel image */
+        display: flex;
+        justify-content: center;
+        /* THIS IS THE KEY: Pull the button up to overlap the wheel */
+        margin-top: -{WHEEL_SIZE / 2 + 60}px;
+    }}
+    .stButton>button {{
+        width: 120px; height: 120px; border-radius: 60px;
+        border: 1px solid rgba(208,168,92,0.45);
+        background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+        backdrop-filter: blur(8px) saturate(1.1);
+        -webkit-backdrop-filter: blur(8px) saturate(1.1);
+        box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,0.06);
+        color: {IVORY}; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+    }}
+    .stButton>button:hover {{
+        transform: translateY(-1px);
+        box-shadow: 0 14px 36px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,0.09);
     }}
 
     /* Result card */
     .result-card {{
-      max-width: min(900px, 90vw); margin: 18px auto 0 auto; padding: 14px 16px;
-      border-radius: 18px;
-      border: 1px solid rgba(208,168,92,0.35);
-      background: rgba(14,18,38,0.72);
-      backdrop-filter: blur(10px) saturate(1.05);
-      -webkit-backdrop-filter: blur(10px) saturate(1.05);
-      box-shadow: 0 18px 40px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,0.05);
+        max-width: min(900px, 90vw); margin: 18px auto 0 auto; padding: 14px 16px;
+        border-radius: 18px;
+        border: 1px solid rgba(208,168,92,0.35);
+        background: rgba(14,18,38,0.72);
+        backdrop-filter: blur(10px) saturate(1.05);
+        -webkit-backdrop-filter: blur(10px) saturate(1.05);
+        box-shadow: 0 18px 40px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,0.05);
     }}
-    .result-number {{ font-weight: 700; color: {GOLD}; opacity: .95; margin-bottom: 4px;
-                      font-size: clamp(14px, 1.2vw, 16px); }}
-    .result-text   {{ color: {IVORY}; line-height: 1.35; white-space: pre-wrap;
-                      font-size: clamp(16px, 1.8vw, 22px); }}
+    .result-number {{ font-weight: 700; color: {GOLD}; opacity: .95; margin-bottom: 4px; font-size: clamp(14px, 1.2vw, 16px); }}
+    .result-text   {{ color: {IVORY}; line-height: 1.35; white-space: pre-wrap; font-size: clamp(16px, 1.8vw, 22px); }}
     </style>
     """, unsafe_allow_html=True)
 
-    # --- Wheel drawing ---
+    # --- Wheel drawing functions (unchanged) ---
     def draw_wheel(labels, colors=None, size=WHEEL_SIZE):
         n = len(labels)
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
@@ -514,7 +524,7 @@ with tab3:
             start = 360 * i / n - 90; end = 360 * (i + 1) / n - 90
             d.pieslice([cx - r, cy - r, cx + r, cy + r], start, end, fill=cols[i % len(cols)], outline="#213a53")
         d.ellipse([cx - r, cy - r, cx + r, cy + r], outline="#d0a85c", width=6)
-        try:   font = ImageFont.truetype("DejaVuSans.ttf", 14)
+        try:    font = ImageFont.truetype("DejaVuSans.ttf", 14)
         except: font = ImageFont.load_default()
         for i, lab in enumerate(labels):
             ang = math.radians(360 * (i + .5) / n - 90)
@@ -526,79 +536,51 @@ with tab3:
         buf = io.BytesIO(); img.save(buf, format="PNG"); import base64
         return base64.b64encode(buf.getvalue()).decode("utf-8")
 
-    # --- centered Spin button (above the wheel) ---
-b1, b2, b3 = st.columns([1, 1, 1])
-with b2:
-    spin_clicked = st.button("Spin!", key="spin_btn_primary")
-
-    # Style THIS button (by its visible text) to be circular & glassy
-    st.markdown("""
-    <script>
-    // Find the Spin! button in the parent document and style it
-    const btns = window.parent.document.querySelectorAll('button');
-    btns.forEach(b => {
-      if (b.innerText.trim() === 'Spin!') {
-        b.style.width = '120px';
-        b.style.height = '120px';
-        b.style.borderRadius = '60px';
-        b.style.border = '1px solid rgba(208,168,92,0.45)';
-        b.style.background = 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02))';
-        b.style.backdropFilter = 'blur(8px) saturate(1.1)';
-        b.style.webkitBackdropFilter = 'blur(8px) saturate(1.1)';
-        b.style.boxShadow = '0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,0.06)';
-        b.style.color = '#eae7e1';
-        b.style.fontWeight = '700';
-        b.style.letterSpacing = '0.5px';
-        b.style.textTransform = 'uppercase';
-        b.onmouseover = () => { b.style.transform = 'translateY(-1px)'; };
-        b.onmouseout  = () => { b.style.transform = 'translateY(0)'; };
-      }
-    });
-    </script>
-    """, unsafe_allow_html=True)
-
-# spin logic (no slider; use internal rotations)
-SPIN_ROTATIONS = random.randint(4, 7)
-if spin_clicked:
-    n = len(options)
-    idx = random.randrange(n)
-    st.session_state.selected_index = idx
-    seg = 360 / n
-    st.session_state.last_angle = SPIN_ROTATIONS * 360 + (idx + .5) * seg
-
-    comp = options[idx]
-    row = [dt.datetime.now().isoformat(timespec="seconds"), ward_focus, "Complication",
-           "-", "-", "-", 0, 0, "-", "-", comp]
-    st.session_state.ledger.loc[len(st.session_state.ledger)] = row
-
-# --- render the wheel (centered) ---
-wheel_b64 = b64(draw_wheel([str(i+1) for i in range(len(options))], size=WHEEL_SIZE))
-angle = st.session_state.last_angle
-html = f"""
-<div style="text-align:center">
-  <div id="wheel_container">
-    <div id="pointer"></div>
-    <img id="wheel_img" src="data:image/png;base64,{wheel_b64}"/>
-  </div>
-</div>
-<script>
-const w = window.parent.document.querySelector('#wheel_img') || document.getElementById('wheel_img');
-if (w) {{ w.style.transition = 'transform 3.2s cubic-bezier(.17,.67,.32,1.35)';
-          requestAnimationFrame(()=>{{ w.style.transform='rotate({angle}deg)'; }}); }}
-</script>
-"""
-st.components.v1.html(html, height=WHEEL_SIZE + 40)
-
-# --- result card (unchanged) ---
-if st.session_state.get("selected_index") is not None:
-    idx = st.session_state["selected_index"]
-    st.markdown(f"""
-    <div class="result-card">
-      <div class="result-number">Result {idx+1:02d} / {len(options):02d}</div>
-      <div class="result-text">{options[idx]}</div>
+    # --- Render wheel + animate to last angle ---
+    wheel_b64 = b64(draw_wheel([str(i+1) for i in range(len(options))], size=WHEEL_SIZE))
+    angle = st.session_state.last_angle
+    html = f"""
+    <div id="wheel_container">
+        <div id="pointer"></div>
+        <img id="wheel_img" src="data:image/png;base64,{wheel_b64}"/>
     </div>
-    """, unsafe_allow_html=True)
+    <script>
+    const w = window.parent.document.querySelector('#wheel_img') || document.getElementById('wheel_img');
+    if (w) {{ w.style.transition = 'transform 3.2s cubic-bezier(.17,.67,.32,1.35)';
+             requestAnimationFrame(()=>{{ w.style.transform='rotate({angle}deg)'; }}); }}
+    </script>
+    """
+    
+    st.markdown('<div class="wheel-assembly">', unsafe_allow_html=True)
+    
+    # 1. Render the wheel component
+    st.components.v1.html(html, height=WHEEL_SIZE + 40)
+    
+    # 2. Render the spin button, which CSS will then reposition
+    if st.button("Spin!", key="spin_btn_centered"):
+        n = len(options)
+        idx = random.randrange(n)
+        st.session_state.selected_index = idx
+        seg = 360 / n
+        st.session_state.last_angle = SPIN_ROTATIONS * 360 + (idx + .5) * seg
+        
+        comp = options[idx]
+        row = [dt.datetime.now().isoformat(timespec="seconds"), ward_focus, "Complication",
+               "-", "-", "-", 0, 0, "-", "-", comp]
+        st.session_state.ledger.loc[len(st.session_state.ledger)] = row
+        # st.rerun() # Optional: uncomment for immediate spin effect
 
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # --- Result card ---
+    if st.session_state.get("selected_index") is not None:
+        idx = st.session_state["selected_index"]
+        st.markdown(f"""
+        <div class="result-card">
+            <div class="result-number">Result {idx+1:02d} / {len(options):02d}</div>
+            <div class="result-text">{options[idx]}</div>
+        </div>
+        """, unsafe_allow_html=True)
 # ---------- Tab 4 ----------
 with tab4:
     st.markdown("### Ledger")

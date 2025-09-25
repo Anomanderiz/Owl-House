@@ -77,7 +77,7 @@ def score_card(title: str, value: int, img_b64: str, trigger_label: str, dom_id:
         cursor: pointer; user-select: none;
       }
       .score-badge img{
-        width: 150px; height: 150px; object-fit: contain;
+        width: 250px; height: 250px; object-fit: contain;
         filter: drop-shadow(0 6px 12px rgba(0,0,0,.35));
       }
       .score-badge .label{
@@ -125,7 +125,7 @@ def score_card(title: str, value: int, img_b64: str, trigger_label: str, dom_id:
             .replace('__IMG__', img_b64)
             .replace('__TRIGGER__', trigger_label)
             .replace('__DOMID__', dom_id))
-    st.components.v1.html(html, height=160)  # taller iFrame so the 96px crest + shadow never clips
+    st.components.v1.html(html, height=260)  # taller iFrame so the 96px crest + shadow never clips
 
 def show_renown_tiers():
     html = '''

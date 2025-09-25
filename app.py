@@ -433,77 +433,19 @@ with tab2:
 
 # ---------- Tab 3 ----------
 with tab3:
-    st.markdown("### Wheel of Fortune")
+    st.markdown("### Wheel of Misfortune")
 
-    # --- Sizing & feel ---
-    WHEEL_SIZE = 600                       # resize the wheel here
-    SPIN_ROTATIONS = random.randint(4, 7)  # theatrical feel (no UI slider)
+    # --- sizing & feel ---
+    WHEEL_SIZE = 600
+    SPIN_ROTATIONS = random.randint(4, 7)
 
-    # --- Heat → pick table ---
+    # --- table by heat ---
     heat_state = "High" if st.session_state.notoriety >= 10 else "Low"
     st.caption(f"Heat: **{heat_state}**")
     table_path = "assets/complications_high.json" if heat_state == "High" else "assets/complications_low.json"
     options = json.load(open(table_path, "r"))
 
-    # --- CSS for button centering, wheel and result card ---
-    st.markdown(f"""
-    <style>
-    /* Wheel block */
-    #wheel_container {{
-      position: relative; width: {WHEEL_SIZE}px; height: {WHEEL_SIZE}px; margin: 0 auto;
-    }}
-    #wheel_img {{
-      width: 100%; height: 100%; border-radius: 50%;
-      box-shadow: 0 10px 40px rgba(0,0,0,.55);
-      background: radial-gradient(closest-side, rgba(255,255,255,0.06), transparent);
-    }}
-    #pointer {{
-      position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
-      width: 0; height: 0;
-      border-left: 16px solid transparent; border-right: 16px solid transparent;
-      border-bottom: 26px solid {GOLD}; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4));
-    }}
-
-    /* --- Button centering ABOVE the wheel --- */
-    .spin-anchor {{ display: block; height: 0; }}
-    .spin-anchor + div {{           /* this is Streamlit's wrapper around the next element (the button) */
-      display: flex; justify-content: center; margin: 8px 0 16px 0;
-    }}
-    .spin-anchor + div > div {{     /* inner wrapper */
-      width: auto !important;
-    }}
-    .spin-anchor + div button {{
-      width: 120px; height: 120px; border-radius: 60px;
-      border: 1px solid rgba(208,168,92,0.45);
-      background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
-      backdrop-filter: blur(8px) saturate(1.1);
-      -webkit-backdrop-filter: blur(8px) saturate(1.1);
-      box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,0.06);
-      color: {IVORY}; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
-    }}
-    .spin-anchor + div button:hover {{
-      transform: translateY(-1px);
-      box-shadow: 0 14px 36px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,0.09);
-    }}
-
-    /* Result card */
-    .result-card {{
-      max-width: min(900px, 90vw); margin: 18px auto 0 auto; padding: 14px 16px;
-      border-radius: 18px;
-      border: 1px solid rgba(208,168,92,0.35);
-      background: rgba(14,18,38,0.72);
-      backdrop-filter: blur(10px) saturate(1.05);
-      -webkit-backdrop-filter: blur(10px) saturate(1.05);
-      box-shadow: 0 18px 40px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,0.05);
-    }}
-    .result-number {{ font-weight: 700; color: {GOLD}; opacity: .95; margin-bottom: 4px;
-                      font-size: clamp(14px, 1.2vw, 16px); }}
-    .result-text   {{ color: {IVORY}; line-height: 1.35; white-space: pre-wrap;
-                      font-size: clamp(16px, 1.8vw, 22px); }}
-    </style>
-    """, unsafe_allow_html=True)
-
-    # --- Wheel drawing ---
+    # --- draw wheel helpers ---
     def draw_wheel(labels, colors=None, size=WHEEL_SIZE):
         n = len(labels)
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
@@ -526,9 +468,13 @@ with tab3:
         buf = io.BytesIO(); img.save(buf, format="PNG"); import base64
         return base64.b64encode(buf.getvalue()).decode("utf-8")
 
-    # --- Centered Spin button ABOVE the wheel ---
-    st.markdown("<span class='spin-anchor'></span>", unsafe_allow_html=True)
-    if st.button("Spin!", key="spin_btn_primary"):
+    wheel_b64 = b64(draw_wheel([str(i+1) for i in range(len(options))], size=WHEEL_SIZE))
+
+    # -------- Hidden Streamlit trigger (we'll click it from the overlay) --------
+    HIDDEN_LABEL = "__SPIN_TRIGGER__73ab__"
+    hidden_clicked = st.button(HIDDEN_LABEL, key="spin_hidden_internal")
+
+    if hidden_clicked:
         n = len(options)
         idx = random.randrange(n)
         st.session_state.selected_index = idx
@@ -540,20 +486,80 @@ with tab3:
                "-", "-", "-", 0, 0, "-", "-", comp]
         st.session_state.ledger.loc[len(st.session_state.ledger)] = row
 
-    # --- Render wheel + animate to last angle ---
-    wheel_b64 = b64(draw_wheel([str(i+1) for i in range(len(options))], size=WHEEL_SIZE))
     angle = st.session_state.last_angle
+    btn_diam = max(96, int(WHEEL_SIZE * 0.18))
+
+    # -------- Wheel + true center overlay button --------
     html = f"""
-    <div style="text-align:center">
+    <style>
+      #wheel_wrap {{
+        position: relative; width: {WHEEL_SIZE}px; margin: 0 auto;
+      }}
+      #wheel_container {{
+        position: relative; width: {WHEEL_SIZE}px; height: {WHEEL_SIZE}px;
+      }}
+      #wheel_img {{
+        width: 100%; height: 100%; border-radius: 50%;
+        box-shadow: 0 10px 40px rgba(0,0,0,.55);
+        background: radial-gradient(closest-side, rgba(255,255,255,0.06), transparent);
+      }}
+      #pointer {{
+        position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+        width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent;
+        border-bottom: 26px solid {GOLD}; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4));
+      }}
+
+      /* Hide the real trigger button by label */
+      /* JS will do the actual hiding (CSS can't match innerText reliably) */
+
+      #spin_overlay {{
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+        width: {btn_diam}px; height: {btn_diam}px; border-radius: {btn_diam/2}px;
+        border: 1px solid rgba(208,168,92,0.45);
+        background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+        backdrop-filter: blur(8px) saturate(1.1);
+        -webkit-backdrop-filter: blur(8px) saturate(1.1);
+        box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,0.06);
+        color: {IVORY}; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+        cursor: pointer; user-select: none; display: grid; place-items: center;
+      }}
+      #spin_overlay:hover {{ transform: translate(-50%,-50%) scale(1.02); }}
+    </style>
+
+    <div id="wheel_wrap">
       <div id="wheel_container">
         <div id="pointer"></div>
-        <img id="wheel_img" src="data:image/png;base64,{wheel_b64}"/>
+        <img id="wheel_img" src="data:image/png;base64,{wheel_b64}" />
+        <div id="spin_overlay">Spin!</div>
       </div>
     </div>
+
     <script>
-    const w = window.parent.document.querySelector('#wheel_img') || document.getElementById('wheel_img');
-    if (w) {{ w.style.transition = 'transform 3.2s cubic-bezier(.17,.67,.32,1.35)';
-              requestAnimationFrame(()=>{{ w.style.transform='rotate({angle}deg)'; }}); }}
+      // Hide the real Streamlit trigger button
+      (function() {{
+        const btns = window.parent.document.querySelectorAll('button');
+        for (const b of btns) {{
+          if (b.innerText.trim() === '{HIDDEN_LABEL}') {{
+            b.style.display = 'none';
+            break;
+          }}
+        }}
+      }})();
+
+      // Overlay → click hidden Streamlit button
+      document.getElementById('spin_overlay').addEventListener('click', () => {{
+        const btns = window.parent.document.querySelectorAll('button');
+        for (const b of btns) {{
+          if (b.innerText.trim() === '{HIDDEN_LABEL}') {{ b.click(); break; }}
+        }}
+      }});
+
+      // Animate wheel to latest angle
+      const w = document.getElementById('wheel_img');
+      if (w) {{
+        w.style.transition = 'transform 3.2s cubic-bezier(.17,.67,.32,1.35)';
+        requestAnimationFrame(() => {{ w.style.transform = 'rotate({angle}deg)'; }});
+      }}
     </script>
     """
     st.components.v1.html(html, height=WHEEL_SIZE + 40)

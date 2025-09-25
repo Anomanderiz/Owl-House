@@ -112,6 +112,18 @@ if "ledger" not in st.session_state:
     ])
 if "last_angle" not in st.session_state: st.session_state.last_angle = 0
 
+# ---------- Bootstrap from Sheets once ----------
+if "bootstrapped" not in st.session_state:
+    df_remote, err = load_ledger_from_sheets()
+    if err:
+        st.sidebar.info("Sheets not loaded (check secrets or access). Running with local session state.")
+    else:
+        # adopt remote ledger and recalc counters
+        if not df_remote.empty:
+            st.session_state.ledger = df_remote
+        st.session_state.renown, st.session_state.notoriety = recalc_totals(st.session_state.ledger)
+    st.session_state.bootstrapped = True
+
 # ---------- Google Sheets (via Streamlit secrets) ----------
 @st.cache_resource(show_spinner=False)
 def _build_gspread_client(sa_json: dict):
@@ -180,6 +192,38 @@ def append_to_google_sheet(rows: list):
     except Exception as e:
         return False, str(e)
 
+# ---------- Persistent load from Google Sheets ----------
+@st.cache_data(ttl=60, show_spinner=False)
+def load_ledger_from_sheets():
+    """Return (df, err). df has correct dtypes or empty DF on new sheet."""
+    sa_json, sheet_id, ws_name, err = _load_sheets_secrets()
+    if err:
+        return pd.DataFrame(columns=st.session_state.ledger.columns), err
+    ok, err = _ensure_worksheet(sa_json, sheet_id, worksheet_name=ws_name)
+    if not ok:
+        return pd.DataFrame(columns=st.session_state.ledger.columns), err
+    try:
+        gc = _build_gspread_client(sa_json)
+        sh = gc.open_by_key(sheet_id)
+        ws = sh.worksheet(ws_name)
+        values = ws.get_all_values()  # header + rows
+        if not values:
+            return pd.DataFrame(columns=st.session_state.ledger.columns), None
+        df = pd.DataFrame(values[1:], columns=values[0])  # skip header
+
+        # normalize / coerce numeric cols
+        for col in ["BI", "EB", "OQM", "renown_gain", "notoriety_gain"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+        return df, None
+    except Exception as e:
+        return pd.DataFrame(columns=st.session_state.ledger.columns), str(e)
+
+def recalc_totals(df: pd.DataFrame):
+    r = int(pd.to_numeric(df.get("renown_gain", pd.Series()), errors="coerce").fillna(0).sum())
+    n = int(pd.to_numeric(df.get("notoriety_gain", pd.Series()), errors="coerce").fillna(0).sum())
+    return r, n
+
 # ---------- Mechanics ----------
 def clamp(v, lo, hi): return max(lo, min(hi, v))
 def heat_multiplier(n): return 1.5 if n>=20 else (1.25 if n>=10 else 1.0)
@@ -219,14 +263,57 @@ with c3: ward_focus = st.selectbox("Active Ward", ["Dock","Field","South","North
 
 # Small heat controls (moved out of sidebar)
 hc1, hc2 = st.columns(2)
-with hc1:
-    if st.button("Lie Low (−1/−2 Heat)"):
-        drop = 2 if st.session_state.notoriety>=10 else 1
-        st.session_state.notoriety = max(0, st.session_state.notoriety-drop)
-with hc2:
-    if st.button("Proxy Charity (−1 Heat)"):
-        st.session_state.notoriety = max(0, st.session_state.notoriety-1)
 
+with hc1:
+    if st.button("Lie Low (−1/−2 Heat)", key="btn_lie_low"):
+        drop = 2 if st.session_state.notoriety >= 10 else 1
+        st.session_state.notoriety = max(0, st.session_state.notoriety - drop)
+
+        # log the adjustment
+        adj = [
+            dt.datetime.now().isoformat(timespec="seconds"),
+            ward_focus,
+            "Adjustment: Lie Low",
+            "-", "-", "-",                      # BI, EB, OQM placeholders
+            0, -drop,                           # renown_gain, notoriety_gain
+            "-", "auto", ""                     # EI_breakdown, notes, complication
+        ]
+        st.session_state.ledger.loc[len(st.session_state.ledger)] = adj
+
+        ok, err = append_to_google_sheet([adj])
+        if ok:
+            # optional: pull fresh + recalc in case others edited the sheet
+            df_remote, _ = load_ledger_from_sheets()
+            if not df_remote.empty:
+                st.session_state.ledger = df_remote
+            st.session_state.renown, st.session_state.notoriety = recalc_totals(st.session_state.ledger)
+            st.success(f"Heat reduced by {drop} and logged.")
+        else:
+            st.warning(f"Logged locally but not synced: {err or 'check secrets/permissions'}")
+
+with hc2:
+    if st.button("Proxy Charity (−1 Heat)", key="btn_proxy_charity"):
+        st.session_state.notoriety = max(0, st.session_state.notoriety - 1)
+
+        adj = [
+            dt.datetime.now().isoformat(timespec="seconds"),
+            ward_focus,
+            "Adjustment: Proxy Charity",
+            "-", "-", "-",
+            0, -1,
+            "-", "auto", ""
+        ]
+        st.session_state.ledger.loc[len(st.session_state.ledger)] = adj
+
+        ok, err = append_to_google_sheet([adj])
+        if ok:
+            df_remote, _ = load_ledger_from_sheets()
+            if not df_remote.empty:
+                st.session_state.ledger = df_remote
+            st.session_state.renown, st.session_state.notoriety = recalc_totals(st.session_state.ledger)
+            st.success("Heat −1 and logged.")
+        else:
+            st.warning(f"Logged locally but not synced: {err or 'check secrets/permissions'}")
 tab1, tab2, tab3, tab4 = st.tabs(["🗺️ Mission Generator","🎯 Resolve & Log","☸️ Wheel of Misfortune","📜 Ledger"])
 
 # ---------- Tab 1 ----------
@@ -310,10 +397,29 @@ with tab2:
         if st.button("Apply Gains & Log", type="primary"):
             st.session_state.renown += q["renown_gain"]
             st.session_state.notoriety += q["notoriety_gain"]
-            row = [dt.datetime.now().isoformat(timespec="seconds"), q["ward"], q["archetype"], q["BI"], q["EB"], q["OQM"], q["renown_gain"], q["notoriety_gain"], json.dumps(q["EI_breakdown"]), notes, ""]
+
+            row = [
+                dt.datetime.now().isoformat(timespec="seconds"), q["ward"], q["archetype"],
+                q["BI"], q["EB"], q["OQM"], q["renown_gain"], q["notoriety_gain"],
+                json.dumps(q["EI_breakdown"]), notes, ""
+            ]
+            # add locally
             st.session_state.ledger.loc[len(st.session_state.ledger)] = row
+
+            # try to persist immediately
+            ok, err = append_to_google_sheet([row])
+            if ok:
+                st.success("Applied, logged, and synced to Google Sheets.")
+                # reload from sheets so counters reflect any external edits
+                df_remote, _ = load_ledger_from_sheets()
+                if not df_remote.empty:
+                    st.session_state.ledger = df_remote
+                st.session_state.renown, st.session_state.notoriety = recalc_totals(st.session_state.ledger)
+            else:
+                st.warning(f"Applied & logged locally, but not synced: {err or 'check secrets/permissions'}")
+
             st.session_state._queued_mission = None
-            st.success("Applied and logged.")
+
     else:
         st.info("No queued mission.")
 
@@ -385,6 +491,14 @@ with tab3:
 # ---------- Tab 4 ----------
 with tab4:
     st.markdown("### Ledger")
+    if st.button("Refresh from Google Sheets", type="secondary"):
+        df_remote, err = load_ledger_from_sheets()
+        if err:
+            st.error(f"Reload failed: {err}")
+        else:
+            st.session_state.ledger = df_remote
+            st.session_state.renown, st.session_state.notoriety = recalc_totals(st.session_state.ledger)
+            st.success("Ledger reloaded and counters recalculated.")
     st.dataframe(st.session_state.ledger, use_container_width=True, height=420)
     csv = st.session_state.ledger.to_csv(index=False).encode("utf-8")
     st.download_button("Download CSV", csv, "night_owls_ledger.csv", "text/csv")

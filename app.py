@@ -439,7 +439,7 @@ with tab3:
     table_path = "assets/complications_high.json" if heat_state=="High" else "assets/complications_low.json"
     options = json.load(open(table_path,"r"))
 
-    def draw_wheel(labels, colors=None, size=540):
+    def draw_wheel(labels, colors=None, size=1000):
         n = len(labels); img = Image.new("RGBA",(size,size),(0,0,0,0)); d = ImageDraw.Draw(img)
         cx,cy=size//2,size//2; r=size//2-6; cols=colors or ["#173b5a","#12213f","#0d3b4f","#112b44"]
         for i,_ in enumerate(labels):

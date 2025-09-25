@@ -63,62 +63,69 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def score_card(title: str, value: int, img_b64: str, trigger_label: str, dom_id: str):
-    """Pretty, clickable KPI card; clicking fires a hidden Streamlit button."""
+    """Minimal KPI badge: large crest + value; click fires the hidden Streamlit button."""
     html = '''
     <style>
-      .score-card {
-        box-sizing: border-box;
-        position: relative; display: grid; grid-template-columns: 72px 1fr;
-        gap: 12px; align-items: center;
-        padding: 12px 14px 18px; /* +6px bottom so nothing gets shaved off */
-        background: rgba(14,18,38,0.60);
-        border: 1px solid rgba(208,168,92,0.35);
-        border-radius: 18px;
-        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+      .score-badge{
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        gap: 14px;
+        padding: 6px 0;              /* tiny breathing room; prevents clipping */
+        background: transparent;      /* no rectangle */
+        border: none;
         cursor: pointer; user-select: none;
       }
-      .score-card:hover { box-shadow: 0 0 0 2px rgba(208,168,92,.25) inset; }
-      .score-card img {
-        width: 72px; height: 72px; object-fit: contain;
+      .score-badge img{
+        width: 96px; height: 96px; object-fit: contain;
         filter: drop-shadow(0 6px 12px rgba(0,0,0,.35));
       }
-      .score-card .meta .label { font-size: 14px; color: __IVORY__; opacity: .9; letter-spacing: .6px; }
-      .score-card .meta .val {
-        font-size: 34px; color: __IVORY__; font-weight: 700; line-height: 1; margin-top: 2px;
+      .score-badge .label{
+        font-size: 15px; color: __IVORY__; opacity: .85; letter-spacing: .4px;
+      }
+      .score-badge .val{
+        font-size: 56px; color: __IVORY__; font-weight: 800; line-height: 1.05;
         text-shadow: 0 1px 0 rgba(0,0,0,.35);
       }
+      @media (max-width: 900px){
+        .score-badge img{ width: 72px; height: 72px; }
+        .score-badge .val{ font-size: 42px; }
+      }
     </style>
-    <div class="score-card" id="__DOMID__" title="Click to view tiers">
+
+    <div class="score-badge" id="__DOMID__" title="Click to view tiers">
       <img src="data:image/png;base64,__IMG__" alt="__TITLE__">
       <div class="meta">
         <div class="label">__TITLE__</div>
         <div class="val">__VALUE__</div>
       </div>
     </div>
+
     <script>
       (function(){
-        try {
+        /* hide the trigger button and relay clicks to it */
+        try{
           const btns = window.parent.document.querySelectorAll('button');
           for (const b of btns) if ((b.innerText||'').trim()==='__TRIGGER__') b.style.display='none';
-        } catch(e){}
-        const card=document.getElementById('__DOMID__');
-        card?.addEventListener('click',()=>{
+        }catch(e){}
+        const card = document.getElementById('__DOMID__');
+        card?.addEventListener('click', ()=>{
           try{
-            const btns=window.parent.document.querySelectorAll('button');
-            for(const b of btns){ if((b.innerText||'').trim()==='__TRIGGER__'){ b.click(); break; } }
+            const btns = window.parent.document.querySelectorAll('button');
+            for (const b of btns) { if ((b.innerText||'').trim()==='__TRIGGER__'){ b.click(); break; } }
           }catch(e){}
         });
       })();
     </script>
     '''
-    html=(html
-          .replace('__IVORY__', IVORY)
-          .replace('__TITLE__', str(title))
-          .replace('__VALUE__', str(value))
-          .replace('__IMG__', img_b64)
-          .replace('__TRIGGER__', trigger_label)
-          .replace('__DOMID__', dom_id))
-    st.components.v1.html(html, height=112)  # was 96; prevents bottom clipping
+    html = (html
+            .replace('__IVORY__', IVORY)
+            .replace('__TITLE__', str(title))
+            .replace('__VALUE__', str(value))
+            .replace('__IMG__', img_b64)
+            .replace('__TRIGGER__', trigger_label)
+            .replace('__DOMID__', dom_id))
+    st.components.v1.html(html, height=140)  # taller iFrame so the 96px crest + shadow never clips
 
 def show_renown_tiers():
     html = '''

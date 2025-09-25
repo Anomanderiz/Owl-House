@@ -1,0 +1,276 @@
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+import math, random, io, json, base64, datetime as dt
+from PIL import Image, ImageDraw, ImageFont
+
+# ---------- Page Setup ----------
+st.set_page_config(page_title="Night Owls — Waterdeep Secret Club", page_icon="🦉", layout="wide")
+
+# Load assets
+def load_b64(path):
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
+
+BG_B64 = load_b64("assets/bg.png")
+LOGO = Image.open("assets/logo.png")
+
+# Colour palette
+GOLD = "#d0a85c"; NAVY = "#0a0f24"; INK = "#0f142d"; IVORY = "#eae7e1"; TEAL = "#0d3b4f"
+
+# ---------- Styles (Glass UI) ----------
+st.markdown(f"""
+<style>
+.stApp {{
+  background: url("data:image/png;base64,{BG_B64}") no-repeat center center fixed;
+  background-size: cover;
+}}
+.block-container {{ padding-top: 1rem; }}
+.glass {{
+  background: rgba(15, 20, 45, 0.55);
+  border-radius: 22px; padding: 1rem 1.2rem;
+  border: 1px solid rgba(208,168,92,0.25);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(255,255,255,0.03);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}}
+h1, h2, h3, h4 {{ color: {IVORY}; }}
+.kpi {{ border: 1px solid rgba(208,168,92,0.25); padding: .8rem 1rem; border-radius: 18px; background: rgba(10,15,36,0.55);}}
+#wheel_container {{ position: relative; width: 540px; height: 540px; margin: 0 auto; }}
+#wheel_img {{ width: 100%; height: 100%; border-radius: 50%; box-shadow: 0 10px 40px rgba(0,0,0,.55); }}
+#pointer {{ position: absolute; top: -12px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent; border-bottom: 26px solid {GOLD}; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4)); }}
+</style>
+""", unsafe_allow_html=True)
+
+# ---------- State ----------
+if "renown" not in st.session_state: st.session_state.renown = 0
+if "notoriety" not in st.session_state: st.session_state.notoriety = 0
+if "ledger" not in st.session_state:
+    st.session_state.ledger = pd.DataFrame(columns=[
+        "timestamp","ward","archetype","BI","EB","OQM",
+        "renown_gain","notoriety_gain","EI_breakdown","notes","complication"
+    ])
+if "last_angle" not in st.session_state: st.session_state.last_angle = 0
+
+# ---------- Google Sheets ----------
+@st.cache_resource(show_spinner=False)
+def _build_gspread_client(sa_json: dict):
+    import gspread
+    from google.oauth2.service_account import Credentials
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    creds = Credentials.from_service_account_info(sa_json, scopes=scopes)
+    return gspread.authorize(creds)
+
+def append_to_google_sheet(sa_json, sheet_id, rows: list, worksheet_name="Log"):
+    try:
+        gc = _build_gspread_client(sa_json)
+        sh = gc.open_by_key(sheet_id)
+        try:
+            ws = sh.worksheet(worksheet_name)
+        except Exception:
+            ws = sh.add_worksheet(title=worksheet_name, rows="1000", cols="20")
+            ws.append_row(list(st.session_state.ledger.columns))
+        for r in rows:
+            ws.append_row(r, value_input_option="USER_ENTERED")
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+# ---------- Mechanics ----------
+def clamp(v, lo, hi): return max(lo, min(hi, v))
+def heat_multiplier(n): return 1.5 if n>=20 else (1.25 if n>=10 else 1.0)
+def renown_from_score(base, arc): return int(round(base * {"Help the Poor":1.0,"Sabotage Evil":1.5,"Expose Corruption":2.0}[arc]))
+def notoriety_gain(cat_base, EI, n): return max(0, math.ceil((cat_base + max(0, EI-1)) * heat_multiplier(n)))
+def compute_BI(arc, inputs):
+    if arc=="Help the Poor":
+        spend=inputs.get("spend",0); hh=inputs.get("households",0)
+        sb = 1 if spend<25 else 2 if spend<50 else 3 if spend<100 else 4 if spend<200 else 5
+        hb = 1 if hh<10 else 2 if hh<25 else 3 if hh<50 else 4 if hh<100 else 5
+        return max(sb,hb)
+    if arc=="Sabotage Evil": return inputs.get("impact_level",1)
+    return inputs.get("expose_level",1)
+def compute_base_score(BI, EB, OQM_list): return clamp(BI+EB+clamp(sum(OQM_list),-2,2),1,7)
+def compute_EI(vals):
+    vis,noise,sig,wit,mag,conc,mis = vals
+    return (vis+noise+sig+wit+mag)-(conc+mis)
+def low_or_high(n): return "High" if n>=10 else "Low"
+
+# ---------- Sidebar ----------
+with st.sidebar:
+    st.image(LOGO, use_column_width=True)
+    st.markdown("### Google Sheets")
+    sheet_id = st.text_input("Sheet ID")
+    sa_mode = st.radio("Service Account", ["Upload JSON","Paste JSON"], horizontal=True)
+    sa_json = None
+    if sa_mode=="Upload JSON":
+        up = st.file_uploader("service_account.json", type=["json"])
+        if up: sa_json = json.loads(up.read().decode("utf-8"))
+    else:
+        sa_text = st.text_area("Paste JSON here")
+        if sa_text.strip():
+            try: sa_json = json.loads(sa_text)
+            except: st.error("Invalid JSON")
+    ws_name = st.text_input("Worksheet name", value="Log")
+    if st.button("Test Sheets"):
+        if sa_json and sheet_id:
+            ok, err = append_to_google_sheet(sa_json, sheet_id, [], worksheet_name=ws_name)
+            st.success("OK") if ok else st.error(err)
+    st.markdown("---")
+    if st.button("Lie Low (−1/−2 Heat)"):
+        drop = 2 if st.session_state.notoriety>=10 else 1
+        st.session_state.notoriety = max(0, st.session_state.notoriety-drop)
+
+# ---------- KPIs ----------
+c1,c2,c3 = st.columns(3)
+with c1: st.metric("Renown", st.session_state.renown)
+with c2: st.metric("Notoriety", st.session_state.notoriety, help="Heat")
+with c3: ward_focus = st.selectbox("Active Ward", ["Dock","Field","South","North","Castle","Trades","Sea"])
+
+tab1, tab2, tab3, tab4 = st.tabs(["🗺️ Mission Generator","🎯 Resolve & Log","☸️ Wheel of Misfortune","📜 Ledger"])
+
+# ---------- Tab 1 ----------
+with tab1:
+    st.markdown("### Create a Mission")
+    arc = st.radio("Archetype", ["Help the Poor","Sabotage Evil","Expose Corruption"], horizontal=True)
+    col1,col2,col3 = st.columns(3)
+    if arc=="Help the Poor":
+        spend = col1.number_input("Gold Spent", 0, step=5, value=40)
+        hh = col2.number_input("Households Aided", 0, step=5, value=25)
+        plan = col3.checkbox("Solid Plan (+1 OQM)", True)
+        inputs = {"spend":spend,"households":hh}
+    elif arc=="Sabotage Evil":
+        impact = col1.slider("Impact Level (1 minor→5 dismantled)",1,5,3)
+        plan = col2.checkbox("Inside Contact (+1 OQM)")
+        rushed = col3.checkbox("Rushed/Loud (−1 OQM)")
+        inputs = {"impact_level":impact}
+    else:
+        expose = col1.slider("Exposure Level (1 clerk→5 city scandal)",1,5,3)
+        proof = col2.checkbox("Hard Proof / Magical Corroboration (+1 OQM)")
+        reused = col3.checkbox("Reused Signature (−1 OQM)")
+        inputs = {"expose_level":expose}
+    # Execution
+    st.markdown("#### Execution")
+    e1,e2,e3 = st.columns(3)
+    with e1: margin = st.number_input("Success Margin",0,20,2)
+    with e2: nat20 = st.checkbox("Natural 20")
+    with e3: nat1 = st.checkbox("Critical botch")
+    EB = 3 if nat20 else (2 if margin>=5 else (1 if margin>=1 else 0))
+    OQM = []
+    if arc=="Help the Poor": 
+        if plan: OQM.append(+1)
+    if arc=="Sabotage Evil":
+        if plan: OQM.append(+1)
+        if rushed: OQM.append(-1)
+    if arc=="Expose Corruption":
+        if proof: OQM.append(+1)
+        if reused: OQM.append(-1)
+    BI = compute_BI(arc, inputs)
+    base_score = compute_base_score(BI, EB, OQM)
+    st.markdown(f"**Base Impact:** {BI} • **EB:** {EB} • **OQM sum:** {sum(OQM)} → **Base Score:** {base_score}")
+    # Exposure Index
+    st.markdown("#### Exposure Index")
+    a,b = st.columns(2)
+    with a:
+        vis = st.slider("Visibility (0–3)",0,3,1)
+        noise = st.slider("Noise (0–3)",0,3,1)
+        sig = st.slider("Signature (0–2)",0,2,0)
+        wit = st.slider("Witnesses (0–2)",0,2,1)
+    with b:
+        mag = st.slider("Magic Trace (0–2)",0,2,0)
+        conc = st.slider("Concealment (0–3)",0,3,2)
+        mis = st.slider("Misdirection (0–2)",0,2,1)
+    EI = compute_EI((vis,noise,sig,wit,mag,conc,mis))
+    ren_gain = renown_from_score(base_score, arc)
+    cat_base = {"Help the Poor":1,"Sabotage Evil":2,"Expose Corruption":3}[arc]
+    heat = notoriety_gain(cat_base + (1 if nat1 else 0), max(0,EI), st.session_state.notoriety)
+    if nat20: heat = max(0, heat-1)
+    st.markdown(f"**Projected Renown:** {ren_gain} • **Projected Notoriety:** {heat} • **EI:** {EI}")
+    if st.button("Queue Mission → Resolve & Log", type="primary"):
+        st.session_state._queued_mission = dict(ward=ward_focus, archetype=arc, BI=BI, EB=EB, OQM=sum(OQM),
+            renown_gain=ren_gain, notoriety_gain=heat, EI_breakdown={"visibility":vis,"noise":noise,"signature":sig,"witnesses":wit,"magic":mag,"concealment":conc,"misdirection":mis})
+        st.success("Mission queued.")
+
+# ---------- Tab 2 ----------
+with tab2:
+    st.markdown("### Resolve Mission & Write to Log")
+    q = st.session_state.get("_queued_mission")
+    if q:
+        st.json(q)
+        notes = st.text_input("Notes (optional)", "")
+        if st.button("Apply Gains & Log", type="primary"):
+            st.session_state.renown += q["renown_gain"]
+            st.session_state.notoriety += q["notoriety_gain"]
+            row = [dt.datetime.now().isoformat(timespec="seconds"), q["ward"], q["archetype"], q["BI"], q["EB"], q["OQM"], q["renown_gain"], q["notoriety_gain"], json.dumps(q["EI_breakdown"]), notes, ""]
+            st.session_state.ledger.loc[len(st.session_state.ledger)] = row
+            st.session_state._queued_mission = None
+            st.success("Applied and logged.")
+    else:
+        st.info("No queued mission.")
+
+    st.markdown("#### Push Log to Google Sheets")
+    if st.button("Append All Rows"):
+        if not sheet_id or not sa_json: st.error("Provide Sheet ID + JSON in sidebar.")
+        else:
+            rows = st.session_state.ledger.values.tolist()
+            ok, err = append_to_google_sheet(sa_json, sheet_id, rows, worksheet_name=ws_name)
+            st.success(f"Appended {len(rows)} rows.") if ok else st.error(err)
+
+# ---------- Tab 3 ----------
+with tab3:
+    st.markdown("### Wheel of Misfortune")
+    heat_state = "High" if st.session_state.notoriety>=10 else "Low"
+    st.caption(f"Heat: **{heat_state}**")
+    table_path = "assets/complications_high.json" if heat_state=="High" else "assets/complications_low.json"
+    options = json.load(open(table_path,"r"))
+    # Build wheel
+    from PIL import Image, ImageDraw, ImageFont
+    def draw_wheel(labels, colors=None, size=540):
+        n = len(labels); img = Image.new("RGBA",(size,size),(0,0,0,0)); d = ImageDraw.Draw(img)
+        cx,cy=size//2,size//2; r=size//2-6; cols=colors or ["#173b5a","#12213f","#0d3b4f","#112b44"]
+        for i,_ in enumerate(labels):
+            start=360*i/len(labels)-90; end=360*(i+1)/len(labels)-90
+            d.pieslice([cx-r,cy-r,cx+r,cy+r],start,end,fill=cols[i%len(cols)],outline="#213a53")
+        d.ellipse([cx-r,cy-r,cx+r,cy+r], outline="#d0a85c", width=6)
+        try: font=ImageFont.truetype("DejaVuSans.ttf",14)
+        except: font=ImageFont.load_default()
+        for i,lab in enumerate(labels):
+            ang=math.radians(360*(i+.5)/len(labels)-90)
+            tx=cx+int((r-60)*math.cos(ang)); ty=cy+int((r-60)*math.sin(ang))
+            d.text((tx,ty),lab, fill="#eae7e1", font=font, anchor="mm")
+        return img
+    def b64(img):
+        buf=io.BytesIO(); img.save(buf, format="PNG"); return base64.b64encode(buf.getvalue()).decode("utf-8")
+    wheel_b64 = b64(draw_wheel([str(i+1) for i in range(len(options))]))
+    default_spins = st.slider("Spin rotations",3,8,5)
+    if st.button("Spin!", type="primary"):
+        n=len(options); idx=random.randrange(n)
+        st.session_state.selected_index=idx
+        seg=360/n; st.session_state.last_angle=default_spins*360+(idx+.5)*seg
+        # Log result row
+        comp=options[idx]
+        row=[dt.datetime.now().isoformat(timespec="seconds"), ward_focus, "Complication", "-", "-", "-", 0,0,"-","-",comp]
+        st.session_state.ledger.loc[len(st.session_state.ledger)] = row
+    angle=st.session_state.last_angle
+    html=f'''
+    <div style="text-align:center">
+      <div id="wheel_container">
+        <div id="pointer"></div>
+        <img id="wheel_img" src="data:image/png;base64,{wheel_b64}"/>
+      </div>
+    </div>
+    <script>
+    const w = window.parent.document.querySelector('#wheel_img') || document.getElementById('wheel_img');
+    if (w) {{ w.style.transition = 'transform 3.2s cubic-bezier(.17,.67,.32,1.35)'; requestAnimationFrame(()=>{{ w.style.transform='rotate({angle}deg)'; }}); }}
+    </script>
+    '''
+    st.components.v1.html(html, height=600)
+    if st.session_state.get("selected_index") is not None:
+        idx=st.session_state["selected_index"]
+        st.markdown(f"**Result:** {idx+1}. {options[idx]}")
+
+# ---------- Tab 4 ----------
+with tab4:
+    st.markdown("### Ledger")
+    st.dataframe(st.session_state.ledger, use_container_width=True, height=420)
+    csv = st.session_state.ledger.to_csv(index=False).encode("utf-8")
+    st.download_button("Download CSV", csv, "night_owls_ledger.csv", "text/csv")

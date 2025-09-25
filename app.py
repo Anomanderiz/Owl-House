@@ -278,6 +278,22 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
+# ---- scrub any accidental hex-code echoes from the top of the page ----
+st.components.v1.html("""
+<script>
+(function(){
+  const kill = ['#eae7e1', '#d0a85c'];
+  try{
+    const scope = window.parent?.document || document;
+    scope.querySelectorAll('p,div,span,code').forEach(el=>{
+      const t=(el.textContent||'').trim();
+      if (kill.includes(t)) el.style.display='none';
+    });
+  }catch(e){}
+})();
+</script>
+""", height=0)
+
 # ---------- State ----------
 if "renown" not in st.session_state: st.session_state.renown = 0
 if "notoriety" not in st.session_state: st.session_state.notoriety = 0
@@ -431,7 +447,6 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
 # ---------- KPI score cards (click to reveal tiers) ----------
-# Hidden triggers (will be auto-hidden in DOM by the score_card helper)
 RENOWN_TRIGGER_LABEL = "RENOWN_SCORE_CARD__CLICK"
 NOTORIETY_TRIGGER_LABEL = "NOTORIETY_SCORE_CARD__CLICK"
 renown_clicked = st.button(RENOWN_TRIGGER_LABEL, key="renown_hidden_click")
@@ -443,74 +458,53 @@ if notor_clicked:
     st.session_state["show_notoriety_tiers"] = not st.session_state.get("show_notoriety_tiers", False)
 
 c1, c2, c3 = st.columns(3)
+
 with c1:
     score_card("Renown", st.session_state.renown, RENOWN_IMG_B64,
                RENOWN_TRIGGER_LABEL, "renown_card_dom")
+
 with c2:
     score_card("Notoriety", st.session_state.notoriety, NOTORIETY_IMG_B64,
                NOTORIETY_TRIGGER_LABEL, "notoriety_card_dom")
+
+    # --- heat controls live directly under Notoriety ---
+    btnL, btnP = st.columns(2)
+
+    with btnL:
+        if st.button("Lie Low (−1/−2 Heat)", key="btn_lie_low"):
+            drop = 2 if st.session_state.notoriety >= 10 else 1
+            st.session_state.notoriety = max(0, st.session_state.notoriety - drop)
+            # log + try to sync (unchanged)
+            adj = [dt.datetime.now().isoformat(timespec="seconds"), ward_focus,
+                   "Adjustment: Lie Low", "-", "-", "-", 0, -drop, "-", "auto", ""]
+            st.session_state.ledger.loc[len(st.session_state.ledger)] = adj
+            ok, err = append_to_google_sheet([adj])
+            if ok:
+                df_remote, _ = load_ledger_from_sheets()
+                if not df_remote.empty: st.session_state.ledger = df_remote
+                st.session_state.renown, st.session_state.notoriety = recalc_totals(st.session_state.ledger)
+                st.success(f"Heat reduced by {drop} and logged.")
+            else:
+                st.warning(f"Logged locally but not synced: {err or 'check secrets/permissions'}")
+
+    with btnP:
+        if st.button("Proxy Charity (−1 Heat)", key="btn_proxy_charity"):
+            st.session_state.notoriety = max(0, st.session_state.notoriety - 1)
+            adj = [dt.datetime.now().isoformat(timespec="seconds"), ward_focus,
+                   "Adjustment: Proxy Charity", "-", "-", "-", 0, -1, "-", "auto", ""]
+            st.session_state.ledger.loc[len(st.session_state.ledger)] = adj
+            ok, err = append_to_google_sheet([adj])
+            if ok:
+                df_remote, _ = load_ledger_from_sheets()
+                if not df_remote.empty: st.session_state.ledger = df_remote
+                st.session_state.renown, st.session_state.notoriety = recalc_totals(st.session_state.ledger)
+                st.success("Heat −1 and logged.")
+            else:
+                st.warning(f"Logged locally but not synced: {err or 'check secrets/permissions'}")
+
 with c3:
     ward_focus = st.selectbox("Active Ward", ["Dock","Field","South","North","Castle","Trades","Sea"])
 
-# Show tier tables when a score card is clicked
-if st.session_state.get("show_renown_tiers"):
-    show_renown_tiers()
-if st.session_state.get("show_notoriety_tiers"):
-    show_notoriety_tiers()
-
-# Small heat controls (moved out of sidebar)
-hc1, hc2 = st.columns(2)
-
-with hc1:
-    if st.button("Lie Low (−1/−2 Heat)", key="btn_lie_low"):
-        drop = 2 if st.session_state.notoriety >= 10 else 1
-        st.session_state.notoriety = max(0, st.session_state.notoriety - drop)
-
-        # log the adjustment
-        adj = [
-            dt.datetime.now().isoformat(timespec="seconds"),
-            ward_focus,
-            "Adjustment: Lie Low",
-            "-", "-", "-",                      # BI, EB, OQM placeholders
-            0, -drop,                           # renown_gain, notoriety_gain
-            "-", "auto", ""                     # EI_breakdown, notes, complication
-        ]
-        st.session_state.ledger.loc[len(st.session_state.ledger)] = adj
-
-        ok, err = append_to_google_sheet([adj])
-        if ok:
-            # optional: pull fresh + recalc in case others edited the sheet
-            df_remote, _ = load_ledger_from_sheets()
-            if not df_remote.empty:
-                st.session_state.ledger = df_remote
-            st.session_state.renown, st.session_state.notoriety = recalc_totals(st.session_state.ledger)
-            st.success(f"Heat reduced by {drop} and logged.")
-        else:
-            st.warning(f"Logged locally but not synced: {err or 'check secrets/permissions'}")
-
-with hc2:
-    if st.button("Proxy Charity (−1 Heat)", key="btn_proxy_charity"):
-        st.session_state.notoriety = max(0, st.session_state.notoriety - 1)
-
-        adj = [
-            dt.datetime.now().isoformat(timespec="seconds"),
-            ward_focus,
-            "Adjustment: Proxy Charity",
-            "-", "-", "-",
-            0, -1,
-            "-", "auto", ""
-        ]
-        st.session_state.ledger.loc[len(st.session_state.ledger)] = adj
-
-        ok, err = append_to_google_sheet([adj])
-        if ok:
-            df_remote, _ = load_ledger_from_sheets()
-            if not df_remote.empty:
-                st.session_state.ledger = df_remote
-            st.session_state.renown, st.session_state.notoriety = recalc_totals(st.session_state.ledger)
-            st.success("Heat −1 and logged.")
-        else:
-            st.warning(f"Logged locally but not synced: {err or 'check secrets/permissions'}")
 tab1, tab2, tab3, tab4 = st.tabs(["🗺️ Mission Generator","🎯 Resolve & Log","☸️ Wheel of Fortune","📜 Ledger"])
 
 # ---------- Tab 1 ----------

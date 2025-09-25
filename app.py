@@ -435,6 +435,13 @@ with tab2:
 with tab3:
     st.markdown("### Wheel of Misfortune")
 
+    # ---------- defaults & palette ----------
+    st.session_state.setdefault("last_angle", 0)
+    st.session_state.setdefault("selected_index", None)
+
+    GOLD  = globals().get("GOLD",  "#d0a85c")
+    IVORY = globals().get("IVORY", "#eae7e1")
+
     # --- sizing & feel ---
     WHEEL_SIZE = 600
     SPIN_ROTATIONS = random.randint(4, 7)
@@ -450,28 +457,36 @@ with tab3:
         n = len(labels)
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
-        cx, cy = size // 2, size // 2; r = size // 2 - 6
+        cx, cy = size // 2, size // 2
+        r = size // 2 - 6
         cols = colors or ["#173b5a", "#12213f", "#0d3b4f", "#112b44"]
         for i, _ in enumerate(labels):
-            start = 360 * i / n - 90; end = 360 * (i + 1) / n - 90
-            d.pieslice([cx - r, cy - r, cx + r, cy + r], start, end, fill=cols[i % len(cols)], outline="#213a53")
-        d.ellipse([cx - r, cy - r, cx + r, cy + r], outline="#d0a85c", width=6)
-        try:   font = ImageFont.truetype("DejaVuSans.ttf", 14)
-        except: font = ImageFont.load_default()
+            start = 360 * i / n - 90
+            end   = 360 * (i + 1) / n - 90
+            d.pieslice([cx - r, cy - r, cx + r, cy + r], start, end,
+                       fill=cols[i % len(cols)], outline="#213a53")
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=GOLD, width=6)
+        try:
+            font = ImageFont.truetype("DejaVuSans.ttf", 14)
+        except:
+            font = ImageFont.load_default()
         for i, lab in enumerate(labels):
             ang = math.radians(360 * (i + .5) / n - 90)
-            tx = cx + int((r - 60) * math.cos(ang)); ty = cy + int((r - 60) * math.sin(ang))
-            d.text((tx, ty), lab, fill="#eae7e1", font=font, anchor="mm")
+            tx = cx + int((r - 60) * math.cos(ang))
+            ty = cy + int((r - 60) * math.sin(ang))
+            d.text((tx, ty), lab, fill=IVORY, font=font, anchor="mm")
         return img
 
     def b64(img):
-        buf = io.BytesIO(); img.save(buf, format="PNG"); import base64
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        import base64
         return base64.b64encode(buf.getvalue()).decode("utf-8")
 
-    wheel_b64 = b64(draw_wheel([str(i+1) for i in range(len(options))], size=WHEEL_SIZE))
+    wheel_b64 = b64(draw_wheel([str(i + 1) for i in range(len(options))], size=WHEEL_SIZE))
 
-    # -------- Hidden Streamlit trigger (we'll click it from the overlay) --------
-    HIDDEN_LABEL = "__SPIN_TRIGGER__73ab__"
+    # ---------- hidden Streamlit trigger (clicked by the centre overlay) ----------
+    HIDDEN_LABEL = "SPIN_TRIGGER__73ab"   # keep it machine-ish and unique
     hidden_clicked = st.button(HIDDEN_LABEL, key="spin_hidden_internal")
 
     if hidden_clicked:
@@ -481,15 +496,19 @@ with tab3:
         seg = 360 / n
         st.session_state.last_angle = SPIN_ROTATIONS * 360 + (idx + .5) * seg
 
-        comp = options[idx]
-        row = [dt.datetime.now().isoformat(timespec="seconds"), ward_focus, "Complication",
-               "-", "-", "-", 0, 0, "-", "-", comp]
-        st.session_state.ledger.loc[len(st.session_state.ledger)] = row
+        # journal entry (soft-fails if not configured)
+        try:
+            comp = options[idx]
+            row = [dt.datetime.now().isoformat(timespec="seconds"),
+                   ward_focus, "Complication", "-", "-", "-", 0, 0, "-", "-", comp]
+            st.session_state.ledger.loc[len(st.session_state.ledger)] = row
+        except Exception:
+            pass
 
     angle = st.session_state.last_angle
     btn_diam = max(96, int(WHEEL_SIZE * 0.18))
 
-    # -------- Wheel + true center overlay button --------
+    # ---------- wheel + true centre overlay button ----------
     html = f"""
     <style>
       #wheel_wrap {{
@@ -508,10 +527,6 @@ with tab3:
         width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent;
         border-bottom: 26px solid {GOLD}; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4));
       }}
-
-      /* Hide the real trigger button by label */
-      /* JS will do the actual hiding (CSS can't match innerText reliably) */
-
       #spin_overlay {{
         position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
         width: {btn_diam}px; height: {btn_diam}px; border-radius: {btn_diam/2}px;
@@ -530,28 +545,32 @@ with tab3:
       <div id="wheel_container">
         <div id="pointer"></div>
         <img id="wheel_img" src="data:image/png;base64,{wheel_b64}" />
-        <div id="spin_overlay">Spin!</div>
+        <div id="spin_overlay">SPIN!</div>
       </div>
     </div>
 
     <script>
-      // Hide the real Streamlit trigger button
+      // Hide the real Streamlit trigger button immediately
       (function() {{
-        const btns = window.parent.document.querySelectorAll('button');
-        for (const b of btns) {{
-          if (b.innerText.trim() === '{HIDDEN_LABEL}') {{
-            b.style.display = 'none';
-            break;
+        try {{
+          const btns = window.parent.document.querySelectorAll('button');
+          for (const b of btns) {{
+            if ((b.innerText || '').trim() === '{HIDDEN_LABEL}') {{
+              b.style.display = 'none';
+              break;
+            }}
           }}
-        }}
+        }} catch (e) {{}}
       }})();
 
       // Overlay → click hidden Streamlit button
       document.getElementById('spin_overlay').addEventListener('click', () => {{
-        const btns = window.parent.document.querySelectorAll('button');
-        for (const b of btns) {{
-          if (b.innerText.trim() === '{HIDDEN_LABEL}') {{ b.click(); break; }}
-        }}
+        try {{
+          const btns = window.parent.document.querySelectorAll('button');
+          for (const b of btns) {{
+            if ((b.innerText || '').trim() === '{HIDDEN_LABEL}') {{ b.click(); break; }}
+          }}
+        }} catch (e) {{}}
       }});
 
       // Animate wheel to latest angle
@@ -564,10 +583,30 @@ with tab3:
     """
     st.components.v1.html(html, height=WHEEL_SIZE + 40)
 
-    # --- Result card ---
+    # ---------- Result card (dynamic, bordered, pretty) ----------
     if st.session_state.get("selected_index") is not None:
         idx = st.session_state["selected_index"]
         st.markdown(f"""
+        <style>
+          .result-card {{
+            max-width: 900px; margin: 18px auto 0; padding: 18px 20px;
+            border-radius: 14px;
+            background: rgba(16,24,32,0.55);
+            border: 1px solid rgba(208,168,92,0.45);
+            box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,0.06);
+            backdrop-filter: blur(6px) saturate(1.05);
+            -webkit-backdrop-filter: blur(6px) saturate(1.05);
+            animation: fadein .35s ease-out;
+          }}
+          .result-number {{
+            font-size: 13px; letter-spacing: .4px; color: {GOLD}; text-transform: uppercase; opacity: .9;
+            margin-bottom: 6px;
+          }}
+          .result-text {{
+            color: {IVORY}; line-height: 1.5; font-size: 16px;
+          }}
+          @keyframes fadein {{ from {{ opacity: 0; transform: translateY(6px);} } to {{ opacity:1; transform:none;} }}
+        </style>
         <div class="result-card">
           <div class="result-number">Result {idx+1:02d} / {len(options):02d}</div>
           <div class="result-text">{options[idx]}</div>

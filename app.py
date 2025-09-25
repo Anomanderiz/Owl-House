@@ -469,6 +469,43 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
+# Put the mural file in /assets (or keep your current path)
+MURAL_B64 = load_b64_first(
+    "assets/mural_sidebar.png",
+    "assets/mural.png",
+    "/mnt/data/Gemini_Generated_Image_bu3d1ibu3d1ibu3d.png"  # fallback: the file you uploaded
+)
+
+MURAL_H      = 560      # height of the mural area in px (tune to taste)
+MURAL_OPACITY = 0.22    # 0 = invisible, 1 = opaque
+
+st.sidebar.markdown(f"""
+<style>
+/* Ensure the sidebar can host positioned children */
+[data-testid="stSidebar"] {{ position: relative; }}
+
+/* A dedicated block that paints the mural and ignores pointer events */
+#sidebar-mural {{
+  position: relative;
+  height: {MURAL_H}px;
+  margin-top: 8px;                 /* sits just beneath your text box */
+  z-index: 0;
+}}
+#sidebar-mural::before {{
+  content: "";
+  position: absolute; inset: 0;
+  background: url("data:image/png;base64,{MURAL_B64}") no-repeat center top / contain;
+  opacity: {MURAL_OPACITY};
+  pointer-events: none;            /* don't block clicks/scrolls */
+  filter: drop-shadow(0 6px 12px rgba(0,0,0,.25));
+  /* Optional vibe:
+     mix-blend-mode: screen;
+  */
+}}
+</style>
+<div id="sidebar-mural" aria-hidden="true"></div>
+""", unsafe_allow_html=True)
+
 # ---------- KPI score cards (click to reveal tiers) ----------
 RENOWN_TRIGGER_LABEL = "RENOWN_SCORE_CARD__CLICK"
 NOTORIETY_TRIGGER_LABEL = "NOTORIETY_SCORE_CARD__CLICK"

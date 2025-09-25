@@ -459,7 +459,7 @@ with tab3:
         return base64.b64encode(buf.getvalue()).decode("utf-8")
 
     wheel_b64 = b64(draw_wheel([str(i+1) for i in range(len(options))]))
-    default_spins = st.slider("Spin rotations",3,8,5)
+    SPIN_ROTATIONS = random.randint(4, 7)
 
     if st.button("Spin!", type="primary"):
         n=len(options); idx=random.randrange(n)

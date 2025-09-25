@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import math, random, io, json, base64, datetime as dt
 from PIL import Image, ImageDraw, ImageFont
+import os
 
 st.set_page_config(page_title="Night Owls — Waterdeep Secret Club", page_icon="🦉", layout="wide")
 
@@ -15,6 +16,151 @@ BG_B64 = load_b64("assets/bg.png")
 LOGO = Image.open("assets/logo.png")
 
 GOLD = "#d0a85c"; IVORY = "#eae7e1"
+
+# Provide fallbacks for colours if not already defined elsewhere
+try:
+    IVORY
+except NameError:
+    IVORY = "#EAE6D7"
+try:
+    GOLD
+except NameError:
+    GOLD = "#D0A85C"
+
+def load_b64_first(*paths):
+    for p in paths:
+        try:
+            with open(p, "rb") as f:
+                return base64.b64encode(f.read()).decode("utf-8")
+        except Exception:
+            continue
+    return ""
+
+RENOWN_IMG_B64 = load_b64_first(
+    "assets/renown_gold.png",
+    "/mnt/data/cabaed5d-81c5-4b62-bd7d-ed6fccca6077.png"  # fallback
+)
+NOTORIETY_IMG_B64 = load_b64_first(
+    "assets/notoriety_red.png",
+    "/mnt/data/bd0e7b0b-2ded-4272-8cd4-4753e0d0c8c8.png"  # fallback
+)
+
+def score_card(title: str, value: int, img_b64: str, trigger_label: str, dom_id: str):
+    """Pretty, clickable KPI card; clicking fires a hidden Streamlit button."""
+    html = '''
+    <style>
+      .score-card {
+        position: relative; display: grid; grid-template-columns: 72px 1fr;
+        gap: 12px; align-items: center; padding: 12px 14px;
+        background: rgba(14,18,38,0.60);
+        border: 1px solid rgba(208,168,92,0.35);
+        border-radius: 18px;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+        cursor: pointer; user-select: none;
+      }
+      .score-card:hover { box-shadow: 0 0 0 2px rgba(208,168,92,.25) inset; }
+      .score-card img {
+        width: 72px; height: 72px; object-fit: contain; filter: drop-shadow(0 6px 12px rgba(0,0,0,.35));
+      }
+      .score-card .meta .label { font-size: 14px; color: __IVORY__; opacity: .9; letter-spacing: .6px; }
+      .score-card .meta .val {
+        font-size: 34px; color: __IVORY__; font-weight: 700; line-height: 1; margin-top: 2px;
+        text-shadow: 0 1px 0 rgba(0,0,0,.35);
+      }
+    </style>
+    <div class="score-card" id="__DOMID__" title="Click to view tiers">
+      <img src="data:image/png;base64,__IMG__" alt="__TITLE__">
+      <div class="meta">
+        <div class="label">__TITLE__</div>
+        <div class="val">__VALUE__</div>
+      </div>
+    </div>
+    <script>
+      (function(){
+        try {
+          const btns = window.parent.document.querySelectorAll('button');
+          for (const b of btns) {
+            if ((b.innerText || '').trim() === '__TRIGGER__') b.style.display = 'none';
+          }
+        } catch(e) {}
+        const card = document.getElementById('__DOMID__');
+        card?.addEventListener('click', () => {
+          try {
+            const btns = window.parent.document.querySelectorAll('button');
+            for (const b of btns) {
+              if ((b.innerText || '').trim() === '__TRIGGER__') { b.click(); break; }
+            }
+          } catch(e) {}
+        });
+      })();
+    </script>
+    '''
+    html = (html
+            .replace('__IVORY__', IVORY)
+            .replace('__TITLE__', str(title))
+            .replace('__VALUE__', str(value))
+            .replace('__IMG__', img_b64)
+            .replace('__TRIGGER__', trigger_label)
+            .replace('__DOMID__', dom_id))
+    st.components.v1.html(html, height=96)
+
+def show_renown_tiers():
+    html = '''
+    <style>
+      .tiers {
+        margin-top: 10px; padding: 14px 16px; border-radius: 16px;
+        background: rgba(16,24,32,.55); border: 1px solid rgba(208,168,92,.45);
+        box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
+      }
+      .tiers h4 { margin: 0 0 6px 0; color: __IVORY__; }
+      .tier-table { width: 100%; border-collapse: collapse; color: __IVORY__; }
+      .tier-table th, .tier-table td { border-top: 1px solid rgba(208,168,92,.25); padding: 8px 10px; vertical-align: top; }
+      .tier-table tr:first-child th, .tier-table tr:first-child td { border-top: none; }
+      .tt-badge { color: __GOLD__; font-weight: 700; }
+    </style>
+    <div class="tiers">
+      <h4>Veil-Fame perks — subtle favours while the mask stays on</h4>
+      <table class="tier-table">
+        <tr><th>Tier</th><th>Threshold</th><th>Perks (quiet, deniable)</th></tr>
+        <tr><td class="tt-badge">R1</td><td>5</td><td><b>Street Signals</b>: advantage to glean rumours from labourers/urchins; simple hand-signs recognised in Dock/Field/Trades wards.</td></tr>
+        <tr><td class="tt-badge">R2</td><td>10</td><td><b>Quiet Hands</b>: once per session arrange a safe hand-off (stash, message, disguise kit) within a short walk in any ward you’ve worked.</td></tr>
+        <tr><td class="tt-badge">R3</td><td>15</td><td><b>Crowd Cover</b>: once per long rest break line-of-sight in a crowd; gain one round of full cover while slipping away.</td></tr>
+        <tr><td class="tt-badge">R4</td><td>20</td><td><b>Whisper Network</b>: one social check per scene at advantage vs non-elite townsfolk; plus one free d6 help per session for urban navigation or fast scrounge.</td></tr>
+        <tr><td class="tt-badge">R5</td><td>25</td><td><b>Safehouses</b>: two hidden boltholes; short rests can’t be disturbed; once per adventure negate a post-job pursuit.</td></tr>
+        <tr><td class="tt-badge">R6</td><td>30</td><td><b>Folk Halo</b> (anonymous): quiet −10% on mundane gear; once per adventure the crowd “coincidentally” intervenes (blocked alley, sudden distraction, etc.).</td></tr>
+      </table>
+    </div>
+    '''
+    st.markdown(html.replace('__IVORY__', IVORY).replace('__GOLD__', GOLD), unsafe_allow_html=True)
+
+def show_notoriety_tiers():
+    html = '''
+    <style>
+      .tiers {
+        margin-top: 10px; padding: 14px 16px; border-radius: 16px;
+        background: rgba(16,24,32,.55); border: 1px solid rgba(208,168,92,.45);
+        box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
+      }
+      .tiers h4 { margin: 0 0 6px 0; color: __IVORY__; }
+      .tier-table { width: 100%; border-collapse: collapse; color: __IVORY__; }
+      .tier-table th, .tier-table td { border-top: 1px solid rgba(208,168,92,.25); padding: 8px 10px; vertical-align: top; }
+      .tier-table tr:first-child th, .tier-table tr:first-child td { border-top: none; }
+      .tt-badge { color: #E06565; font-weight: 700; }
+    </style>
+    <div class="tiers">
+      <h4>City Heat — escalating responses without unmasking you</h4>
+      <table class="tier-table">
+        <tr><th>Band</th><th>Score</th><th>City response (mechanical pressure, no identity reveal)</th></tr>
+        <tr><td class="tt-badge">N0 — Cold</td><td>0–4</td><td>Nothing special.</td></tr>
+        <tr><td class="tt-badge">N1 — Warm</td><td>5–9</td><td><b>Ward sweeps</b>: after jobs in hot wards, DC 12 group Stealth/Deception or a patrol drifts close (minor time loss or +1 heat if ignored).</td></tr>
+        <tr><td class="tt-badge">N2 — Hot</td><td>10–14</td><td><b>Pattern watch</b>: repeat MOs get +2 DCs; weekly bag checks on kits/disguises—fail adds +1 heat.</td></tr>
+        <tr><td class="tt-badge">N3 — Scalding</td><td>15–19</td><td><b>Counter-ops</b>: rivals interfere 1 in 3 missions; residue detectors appear; reusing looks puts Disguise kits at disadvantage.</td></tr>
+        <tr><td class="tt-badge">N4 — Burning</td><td>20–24</td><td><b>Scry-sweeps</b>: wide-angle divinations; any arcane casting during ops risks a Trace test (DC 14 Arcana/Stealth). Fail = +2 heat and a tail to the scene.</td></tr>
+        <tr><td class="tt-badge">N5 — Inferno</td><td>25–30</td><td><b>Citywide dragnet</b>: curfews in hot wards; +2 DC to stealth/social; a bounty is posted for any intel on “the impostors”.</td></tr>
+      </table>
+    </div>
+    '''
+    st.markdown(html.replace('__IVORY__', IVORY), unsafe_allow_html=True)
 
 # ---------- Styles (Glass + Welcome card) ----------
 st.markdown(f"""
@@ -99,6 +245,36 @@ header, footer, #MainMenu {{ visibility: hidden; }}
 
 /* extra belt-and-suspenders for newer builds */
 div[data-testid="stHeader"] {{ display: none; }}
+</style>
+""", unsafe_allow_html=True)
+
+# ---------- Global gold borders & button glow ----------
+st.markdown(f"""
+<style>
+/* Gold-rim boxes: inputs, tables, alerts, widgets, tabs, etc. */
+.stTextInput > div, .stNumberInput > div, .stSelectbox > div, .stMultiSelect > div,
+.stTextArea > div, .stFileUploader > div, .stAlert, .stDataFrame,
+.stTabs [data-baseweb="tab"], .st-expander, .stMetric, .stCaptionContainer,
+.kpi, .welcome, .result-card {{
+  border: 1px solid rgba(208,168,92,.35) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 10px 24px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.06) !important;
+  background: rgba(14,18,38,.60);
+}}
+/* Buttons (including download/link buttons) */
+.stButton > button, .stDownloadButton > button, .stLinkButton > a {{
+  border: 1px solid rgba(208,168,92,.55);
+  color: {IVORY} !important;
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  border-radius: 12px; padding: .5rem .9rem;
+  box-shadow: 0 6px 16px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.06);
+  transition: border-color .15s ease, box-shadow .15s ease, transform .05s ease;
+}}
+.stButton > button:hover, .stDownloadButton > button:hover, .stLinkButton > a:hover {{
+  border-color: {GOLD};
+  box-shadow: 0 8px 22px rgba(0,0,0,.35), 0 0 0 2px rgba(208,168,92,.25) inset;
+  transform: translateY(-1px);
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -254,11 +430,33 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-# ---------- KPIs ----------
-c1,c2,c3 = st.columns(3)
-with c1: st.markdown(f"<div class='kpi'><h4>Renown</h4><div style='font-size:28px'>{st.session_state.renown}</div></div>", unsafe_allow_html=True)
-with c2: st.markdown(f"<div class='kpi'><h4>Notoriety</h4><div style='font-size:28px'>{st.session_state.notoriety}</div></div>", unsafe_allow_html=True)
-with c3: ward_focus = st.selectbox("Active Ward", ["Dock","Field","South","North","Castle","Trades","Sea"])
+# ---------- KPI score cards (click to reveal tiers) ----------
+# Hidden triggers (will be auto-hidden in DOM by the score_card helper)
+RENOWN_TRIGGER_LABEL = "RENOWN_SCORE_CARD__CLICK"
+NOTORIETY_TRIGGER_LABEL = "NOTORIETY_SCORE_CARD__CLICK"
+renown_clicked = st.button(RENOWN_TRIGGER_LABEL, key="renown_hidden_click")
+notor_clicked  = st.button(NOTORIETY_TRIGGER_LABEL, key="notoriety_hidden_click")
+
+if renown_clicked:
+    st.session_state["show_renown_tiers"] = not st.session_state.get("show_renown_tiers", False)
+if notor_clicked:
+    st.session_state["show_notoriety_tiers"] = not st.session_state.get("show_notoriety_tiers", False)
+
+c1, c2, c3 = st.columns(3)
+with c1:
+    score_card("Renown", st.session_state.renown, RENOWN_IMG_B64,
+               RENOWN_TRIGGER_LABEL, "renown_card_dom")
+with c2:
+    score_card("Notoriety", st.session_state.notoriety, NOTORIETY_IMG_B64,
+               NOTORIETY_TRIGGER_LABEL, "notoriety_card_dom")
+with c3:
+    ward_focus = st.selectbox("Active Ward", ["Dock","Field","South","North","Castle","Trades","Sea"])
+
+# Show tier tables when a score card is clicked
+if st.session_state.get("show_renown_tiers"):
+    show_renown_tiers()
+if st.session_state.get("show_notoriety_tiers"):
+    show_notoriety_tiers()
 
 # Small heat controls (moved out of sidebar)
 hc1, hc2 = st.columns(2)

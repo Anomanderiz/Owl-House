@@ -564,7 +564,7 @@ with tab3:
     """
     st.components.v1.html(html, height=WHEEL_SIZE + 40)
 
-    # --- Result card ---
+# ---------- Result card ----------
     if st.session_state.get("selected_index") is not None:
         idx = st.session_state["selected_index"]
         st.markdown(f"""

@@ -67,7 +67,7 @@ h1, h2, h3, h4 {{ color: {IVORY}; text-shadow: 0 1px 0 rgba(0,0,0,0.35); }}
   border-color: rgba(208,168,92,0.35);
   border-bottom-color: {GOLD};
 }}
-#wheel_container {{ position: relative; width: 700px; height: 700px; margin: 0 auto; }}
+#wheel_container {{ position: relative; width: 600px; height: 600px; margin: 0 auto; }}
 #wheel_img {{
   width: 100%; height: 100%; border-radius: 50%;
   box-shadow: 0 10px 40px rgba(0,0,0,.55);

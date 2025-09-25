@@ -435,17 +435,17 @@ with tab2:
 with tab3:
     st.markdown("### Wheel of Misfortune")
 
-    # --- Sizing & feel ---
-    WHEEL_SIZE = 600                         # change this to resize the wheel
-    SPIN_ROTATIONS = random.randint(4, 7)    # theatrical feel
+    # --- sizing & feel ---
+    WHEEL_SIZE = 600
+    SPIN_ROTATIONS = random.randint(4, 7)
 
-    # --- Heat → pick table ---
+    # --- table by heat ---
     heat_state = "High" if st.session_state.notoriety >= 10 else "Low"
     st.caption(f"Heat: **{heat_state}**")
     table_path = "assets/complications_high.json" if heat_state == "High" else "assets/complications_low.json"
     options = json.load(open(table_path, "r"))
 
-    # ---------- draw wheel ----------
+    # --- draw wheel helpers ---
     def draw_wheel(labels, colors=None, size=WHEEL_SIZE):
         n = len(labels)
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
@@ -470,9 +470,9 @@ with tab3:
 
     wheel_b64 = b64(draw_wheel([str(i+1) for i in range(len(options))], size=WHEEL_SIZE))
 
-    # ---------- hidden Streamlit button (real trigger for Python) ----------
-    # We hide this button in the DOM and click it from the overlay via JS.
-    hidden_clicked = st.button("HiddenSpin", key="spin_hidden_internal")
+    # -------- Hidden Streamlit trigger (we'll click it from the overlay) --------
+    HIDDEN_LABEL = "__SPIN_TRIGGER__73ab__"
+    hidden_clicked = st.button(HIDDEN_LABEL, key="spin_hidden_internal")
 
     if hidden_clicked:
         n = len(options)
@@ -487,24 +487,19 @@ with tab3:
         st.session_state.ledger.loc[len(st.session_state.ledger)] = row
 
     angle = st.session_state.last_angle
+    btn_diam = max(96, int(WHEEL_SIZE * 0.18))
 
-    # ---------- HTML: wheel + truly centered overlay button ----------
-    btn_diam = max(96, int(WHEEL_SIZE * 0.18))  # button scales with wheel
+    # -------- Wheel + true center overlay button --------
     html = f"""
     <style>
-      /* container */
       #wheel_wrap {{
-        position: relative;
-        width: {WHEEL_SIZE}px;
-        margin: 0 auto;
+        position: relative; width: {WHEEL_SIZE}px; margin: 0 auto;
       }}
       #wheel_container {{
-        position: relative;
-        width: {WHEEL_SIZE}px; height: {WHEEL_SIZE}px;
+        position: relative; width: {WHEEL_SIZE}px; height: {WHEEL_SIZE}px;
       }}
       #wheel_img {{
-        width: 100%; height: 100%;
-        border-radius: 50%;
+        width: 100%; height: 100%; border-radius: 50%;
         box-shadow: 0 10px 40px rgba(0,0,0,.55);
         background: radial-gradient(closest-side, rgba(255,255,255,0.06), transparent);
       }}
@@ -514,12 +509,9 @@ with tab3:
         border-bottom: 26px solid {GOLD}; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4));
       }}
 
-      /* hide the real Streamlit trigger button */
-      button:has(> span:contains("HiddenSpin")), button:contains("HiddenSpin") {{
-        display: none !important;
-      }}
+      /* Hide the real trigger button by label */
+      /* JS will do the actual hiding (CSS can't match innerText reliably) */
 
-      /* overlay button centered on wheel */
       #spin_overlay {{
         position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
         width: {btn_diam}px; height: {btn_diam}px; border-radius: {btn_diam/2}px;
@@ -529,7 +521,7 @@ with tab3:
         -webkit-backdrop-filter: blur(8px) saturate(1.1);
         box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,0.06);
         color: {IVORY}; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
-        cursor: pointer; user-select: none;
+        cursor: pointer; user-select: none; display: grid; place-items: center;
       }}
       #spin_overlay:hover {{ transform: translate(-50%,-50%) scale(1.02); }}
     </style>
@@ -538,17 +530,27 @@ with tab3:
       <div id="wheel_container">
         <div id="pointer"></div>
         <img id="wheel_img" src="data:image/png;base64,{wheel_b64}" />
-        <div id="spin_overlay">Spin</div>
+        <div id="spin_overlay">Spin!</div>
       </div>
     </div>
 
     <script>
-      // Click overlay -> click the hidden Streamlit button in parent document
-      const overlay = document.getElementById('spin_overlay');
-      overlay.addEventListener('click', () => {{
+      // Hide the real Streamlit trigger button
+      (function() {{
         const btns = window.parent.document.querySelectorAll('button');
         for (const b of btns) {{
-          if (b.innerText.trim() === 'HiddenSpin') {{ b.click(); break; }}
+          if (b.innerText.trim() === '{HIDDEN_LABEL}') {{
+            b.style.display = 'none';
+            break;
+          }}
+        }}
+      }})();
+
+      // Overlay → click hidden Streamlit button
+      document.getElementById('spin_overlay').addEventListener('click', () => {{
+        const btns = window.parent.document.querySelectorAll('button');
+        for (const b of btns) {{
+          if (b.innerText.trim() === '{HIDDEN_LABEL}') {{ b.click(); break; }}
         }}
       }});
 
@@ -562,7 +564,7 @@ with tab3:
     """
     st.components.v1.html(html, height=WHEEL_SIZE + 40)
 
-    # ---------- Result card ----------
+    # --- Result card ---
     if st.session_state.get("selected_index") is not None:
         idx = st.session_state["selected_index"]
         st.markdown(f"""

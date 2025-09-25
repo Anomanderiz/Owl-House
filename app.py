@@ -526,47 +526,78 @@ with tab3:
         buf = io.BytesIO(); img.save(buf, format="PNG"); import base64
         return base64.b64encode(buf.getvalue()).decode("utf-8")
 
-    # --- Centered Spin button ABOVE the wheel ---
-    st.markdown("<span class='spin-anchor'></span>", unsafe_allow_html=True)
-    if st.button("Spin!", key="spin_btn_primary"):
-        n = len(options)
-        idx = random.randrange(n)
-        st.session_state.selected_index = idx
-        seg = 360 / n
-        st.session_state.last_angle = SPIN_ROTATIONS * 360 + (idx + .5) * seg
+    # --- centered Spin button (above the wheel) ---
+b1, b2, b3 = st.columns([1, 1, 1])
+with b2:
+    spin_clicked = st.button("Spin!", key="spin_btn_primary")
 
-        comp = options[idx]
-        row = [dt.datetime.now().isoformat(timespec="seconds"), ward_focus, "Complication",
-               "-", "-", "-", 0, 0, "-", "-", comp]
-        st.session_state.ledger.loc[len(st.session_state.ledger)] = row
-
-    # --- Render wheel + animate to last angle ---
-    wheel_b64 = b64(draw_wheel([str(i+1) for i in range(len(options))], size=WHEEL_SIZE))
-    angle = st.session_state.last_angle
-    html = f"""
-    <div style="text-align:center">
-      <div id="wheel_container">
-        <div id="pointer"></div>
-        <img id="wheel_img" src="data:image/png;base64,{wheel_b64}"/>
-      </div>
-    </div>
+    # Style THIS button (by its visible text) to be circular & glassy
+    st.markdown("""
     <script>
-    const w = window.parent.document.querySelector('#wheel_img') || document.getElementById('wheel_img');
-    if (w) {{ w.style.transition = 'transform 3.2s cubic-bezier(.17,.67,.32,1.35)';
-              requestAnimationFrame(()=>{{ w.style.transform='rotate({angle}deg)'; }}); }}
+    // Find the Spin! button in the parent document and style it
+    const btns = window.parent.document.querySelectorAll('button');
+    btns.forEach(b => {
+      if (b.innerText.trim() === 'Spin!') {
+        b.style.width = '120px';
+        b.style.height = '120px';
+        b.style.borderRadius = '60px';
+        b.style.border = '1px solid rgba(208,168,92,0.45)';
+        b.style.background = 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02))';
+        b.style.backdropFilter = 'blur(8px) saturate(1.1)';
+        b.style.webkitBackdropFilter = 'blur(8px) saturate(1.1)';
+        b.style.boxShadow = '0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,0.06)';
+        b.style.color = '#eae7e1';
+        b.style.fontWeight = '700';
+        b.style.letterSpacing = '0.5px';
+        b.style.textTransform = 'uppercase';
+        b.onmouseover = () => { b.style.transform = 'translateY(-1px)'; };
+        b.onmouseout  = () => { b.style.transform = 'translateY(0)'; };
+      }
+    });
     </script>
-    """
-    st.components.v1.html(html, height=WHEEL_SIZE + 40)
+    """, unsafe_allow_html=True)
 
-    # --- Result card ---
-    if st.session_state.get("selected_index") is not None:
-        idx = st.session_state["selected_index"]
-        st.markdown(f"""
-        <div class="result-card">
-          <div class="result-number">Result {idx+1:02d} / {len(options):02d}</div>
-          <div class="result-text">{options[idx]}</div>
-        </div>
-        """, unsafe_allow_html=True)
+# spin logic (no slider; use internal rotations)
+SPIN_ROTATIONS = random.randint(4, 7)
+if spin_clicked:
+    n = len(options)
+    idx = random.randrange(n)
+    st.session_state.selected_index = idx
+    seg = 360 / n
+    st.session_state.last_angle = SPIN_ROTATIONS * 360 + (idx + .5) * seg
+
+    comp = options[idx]
+    row = [dt.datetime.now().isoformat(timespec="seconds"), ward_focus, "Complication",
+           "-", "-", "-", 0, 0, "-", "-", comp]
+    st.session_state.ledger.loc[len(st.session_state.ledger)] = row
+
+# --- render the wheel (centered) ---
+wheel_b64 = b64(draw_wheel([str(i+1) for i in range(len(options))], size=WHEEL_SIZE))
+angle = st.session_state.last_angle
+html = f"""
+<div style="text-align:center">
+  <div id="wheel_container">
+    <div id="pointer"></div>
+    <img id="wheel_img" src="data:image/png;base64,{wheel_b64}"/>
+  </div>
+</div>
+<script>
+const w = window.parent.document.querySelector('#wheel_img') || document.getElementById('wheel_img');
+if (w) {{ w.style.transition = 'transform 3.2s cubic-bezier(.17,.67,.32,1.35)';
+          requestAnimationFrame(()=>{{ w.style.transform='rotate({angle}deg)'; }}); }}
+</script>
+"""
+st.components.v1.html(html, height=WHEEL_SIZE + 40)
+
+# --- result card (unchanged) ---
+if st.session_state.get("selected_index") is not None:
+    idx = st.session_state["selected_index"]
+    st.markdown(f"""
+    <div class="result-card">
+      <div class="result-number">Result {idx+1:02d} / {len(options):02d}</div>
+      <div class="result-text">{options[idx]}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # ---------- Tab 4 ----------
 with tab4:

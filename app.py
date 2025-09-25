@@ -476,7 +476,7 @@ MURAL_B64 = load_b64_first(
 )
 
 MURAL_H      = 1120      # height of the mural area in px (tune to taste)
-MURAL_OPACITY = 0.22    # 0 = invisible, 1 = opaque
+MURAL_OPACITY = 1.0    # 0 = invisible, 1 = opaque
 
 st.sidebar.markdown(f"""
 <style>

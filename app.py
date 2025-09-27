@@ -90,6 +90,10 @@ MURAL_B64 = first_existing_b64((
     "assets/mural.png",
 ))
 
+# Theme colours (define BEFORE any f-strings that reference them)
+GOLD  = globals().get("GOLD",  "#d0a85c")
+IVORY = globals().get("IVORY", "#eae7e1")
+
 st.markdown("""
 <style>
 /* Let KPI cards breathe; stop columns from cropping the bottom edge/shadow */

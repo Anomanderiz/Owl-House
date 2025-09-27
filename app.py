@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import math, random, io, json, base64, datetime as dt, os
-from typing import Optional, Tuple, List
+from typing import Tuple, List
 from PIL import Image, ImageDraw, ImageFont
 
 # ------------------------------------------------------------
@@ -41,7 +41,6 @@ def load_complications(heat_state: str) -> List[str]:
 
 @st.cache_data(show_spinner=False, max_entries=8)
 def build_wheel_b64(labels: Tuple[str, ...], size: int, gold: str, ivory: str) -> str:
-    # draw once, reuse (until inputs change)
     n = len(labels)
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -75,133 +74,19 @@ LOGO = Image.open(io.BytesIO(read_bytes("assets/logo.png")))
 
 RENOWN_IMG_B64 = first_existing_b64((
     "assets/renown_gold.png",
-    "/mnt/data/cabaed5d-81c5-4b62-bd7d-ed6fccca6077.png",
+    "assets/renown.png",
 ))
 NOTORIETY_IMG_B64 = first_existing_b64((
     "assets/notoriety_red.png",
-    "/mnt/data/bd0e7b0b-2ded-4272-8cd4-4753e0d0c8c8.png",
+    "assets/notoriety.png",
 ))
 MURAL_B64 = first_existing_b64((
     "assets/mural_sidebar.png",
     "assets/mural.png",
 ))
 
-GOLD  = globals().get("GOLD",  "#d0a85c")
-IVORY = globals().get("IVORY", "#eae7e1")
-
-# ------------------------------------------------------------
-# Small CSS for card overflow safety
-# ------------------------------------------------------------
-st.markdown("""
-<style>
-.kpi-card, .score-card{ padding-bottom:20px!important; margin-bottom:12px!important; overflow:visible!important; }
-[data-testid="column"] > div:has(.kpi-card), [data-testid="column"] > div:has(.score-card){
-  overflow:visible!important; padding-bottom:8px!important;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# ------------------------------------------------------------
-# Score card (client-side toggle of tier panels; no reruns)
-# ------------------------------------------------------------
-def score_card(title: str, value: int, img_b64: str, dom_id: str, toggle_target_id: Optional[str] = None):
-    html = '''
-    <style>
-      .score-badge{
-        position: relative; display: inline-flex; align-items: center; gap: 14px;
-        padding: 6px 0; background: transparent; border: none; cursor: pointer; user-select: none;
-      }
-      .score-badge img{ width: 250px; height: 250px; object-fit: contain;
-        filter: drop-shadow(0 6px 12px rgba(0,0,0,.35)); }
-      .score-badge .label{ font-size: 15px; color: __IVORY__; opacity: .85; letter-spacing: .4px; }
-      .score-badge .val{ font-size: 56px; color: __IVORY__; font-weight: 800; line-height: 1.05;
-        text-shadow: 0 1px 0 rgba(0,0,0,.35); }
-      @media (max-width: 900px){ .score-badge img{ width: 72px; height: 72px; } .score-badge .val{ font-size: 42px; } }
-    </style>
-    <div class="score-badge" id="__DOMID__" title="Click to view tiers">
-      <img src="data:image/png;base64,__IMG__" alt="__TITLE__">
-      <div class="meta">
-        <div class="label">__TITLE__</div>
-        <div class="val">__VALUE__</div>
-      </div>
-    </div>
-    <script>
-      (function(){
-        const card = document.getElementById('__DOMID__');
-        const targetId = '__TARGET__';
-        card?.addEventListener('click', ()=>{
-          if (!targetId) return;
-          const el = document.getElementById(targetId);
-          if (el) el.classList.toggle('open');
-        });
-      })();
-    </script>
-    '''
-    html = (html
-            .replace('__IVORY__', IVORY)
-            .replace('__TITLE__', str(title))
-            .replace('__VALUE__', str(value))
-            .replace('__IMG__', img_b64)
-            .replace('__DOMID__', dom_id)
-            .replace('__TARGET__', toggle_target_id or ""))
-    st.components.v1.html(html, height=260)
-
-def show_renown_tiers(container_id="renown_tiers"):
-    html = '''
-    <style>
-      .tiers { margin-top: 10px; padding: 14px 16px; border-radius: 16px;
-        background: rgba(16,24,32,.55); border: 1px solid rgba(208,168,92,.45);
-        box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06); }
-      .tiers h4 { margin: 0 0 6px 0; color: __IVORY__; }
-      .tier-table { width: 100%; border-collapse: collapse; color: __IVORY__; }
-      .tier-table th, .tier-table td { border-top: 1px solid rgba(208,168,92,.25); padding: 8px 10px; vertical-align: top; }
-      .tier-table tr:first-child th, .tier-table tr:first-child td { border-top: none; }
-      .tt-badge { color: __GOLD__; font-weight: 700; }
-      .tiers:not(.open) { display: none; }
-    </style>
-    <div id="__ID__" class="tiers">
-      <h4>Veil-Fame perks — subtle favours while the mask stays on</h4>
-      <table class="tier-table">
-        <tr><th>Tier</th><th>Threshold</th><th>Perks (quiet, deniable)</th></tr>
-        <tr><td class="tt-badge">R1</td><td>5</td><td><b>Street Signals</b>: advantage to glean rumours; hand-signs in Dock/Field/Trades wards.</td></tr>
-        <tr><td class="tt-badge">R2</td><td>10</td><td><b>Quiet Hands</b>: once/session set up a safe hand-off nearby.</td></tr>
-        <tr><td class="tt-badge">R3</td><td>15</td><td><b>Crowd Cover</b>: once/long rest break line-of-sight for one round.</td></tr>
-        <tr><td class="tt-badge">R4</td><td>20</td><td><b>Whisper Network</b>: 1 social check/scene at advantage vs townsfolk; +1 free d6 help/session.</td></tr>
-        <tr><td class="tt-badge">R5</td><td>25</td><td><b>Safehouses</b>: two boltholes; once/adventure negate a post-job pursuit.</td></tr>
-        <tr><td class="tt-badge">R6</td><td>30</td><td><b>Folk Halo</b>: quiet −10% mundane gear; once/adventure crowd “coincidentally” intervenes.</td></tr>
-      </table>
-    </div>
-    '''
-    st.markdown(html.replace('__IVORY__', IVORY).replace('__GOLD__', GOLD).replace('__ID__', container_id),
-                unsafe_allow_html=True)
-
-def show_notoriety_tiers(container_id="notoriety_tiers"):
-    html = '''
-    <style>
-      .tiers { margin-top: 10px; padding: 14px 16px; border-radius: 16px;
-        background: rgba(16,24,32,.55); border: 1px solid rgba(208,168,92,.45);
-        box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06); }
-      .tiers h4 { margin: 0 0 6px 0; color: __IVORY__; }
-      .tier-table { width: 100%; border-collapse: collapse; color: __IVORY__; }
-      .tier-table th, .tier-table td { border-top: 1px solid rgba(208,168,92,.25); padding: 8px 10px; vertical-align: top; }
-      .tier-table tr:first-child th, .tier-table tr:first-child td { border-top: none; }
-      .tt-badge { color: #E06565; font-weight: 700; }
-      .tiers:not(.open) { display: none; }
-    </style>
-    <div id="__ID__" class="tiers">
-      <h4>City Heat — escalating responses without unmasking you</h4>
-      <table class="tier-table">
-        <tr><th>Band</th><th>Score</th><th>City response</th></tr>
-        <tr><td class="tt-badge">N0 — Cold</td><td>0–4</td><td>Nothing special.</td></tr>
-        <tr><td class="tt-badge">N1 — Warm</td><td>5–9</td><td>Ward sweeps; ignore → +1 heat.</td></tr>
-        <tr><td class="tt-badge">N2 — Hot</td><td>10–14</td><td>Pattern watch; repeat MOs +2 DC.</td></tr>
-        <tr><td class="tt-badge">N3 — Scalding</td><td>15–19</td><td>Counter-ops; residue detectors; disguise disadvantage on reuse.</td></tr>
-        <tr><td class="tt-badge">N4 — Burning</td><td>20–24</td><td>Scry-sweeps; Trace test on casting; fail +2 heat.</td></tr>
-        <tr><td class="tt-badge">N5 — Inferno</td><td>25–30</td><td>Citywide dragnet; curfews; +2 DC to stealth/social.</td></tr>
-      </table>
-    </div>
-    '''
-    st.markdown(html.replace('__IVORY__', IVORY), unsafe_allow_html=True)
+GOLD  = "#d0a85c"
+IVORY = "#eae7e1"
 
 # ------------------------------------------------------------
 # Global styles
@@ -235,12 +120,6 @@ st.markdown(f"""
   padding: 1.2rem 1.5rem !important; z-index: 1;
 }}
 h1, h2, h3, h4 {{ color: {IVORY}; text-shadow: 0 1px 0 rgba(0,0,0,0.35); }}
-.kpi {{
-  border: 1px solid rgba(208,168,92,0.25);
-  padding: 0.8rem 1rem; border-radius: 18px;
-  background: var(--glass-alt);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
-}}
 .stTabs [data-baseweb="tab-list"] {{ gap: .25rem; }}
 .stTabs [data-baseweb="tab"] {{
   color: {IVORY};
@@ -255,14 +134,6 @@ h1, h2, h3, h4 {{ color: {IVORY}; text-shadow: 0 1px 0 rgba(0,0,0,0.35); }}
   border-color: rgba(208,168,92,0.35);
   border-bottom-color: {GOLD};
 }}
-#pointer {{
-  position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
-  width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent;
-  border-bottom: 26px solid {GOLD}; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4));
-}}
-.dataframe tbody tr {{ background: rgba(10,15,36,0.35); }}
-.dataframe thead tr {{ background: rgba(10,15,36,0.55); }}
-
 /* Sidebar welcome card + mural */
 .welcome {{
   border: 1px solid rgba(208,168,92,0.35);
@@ -272,54 +143,13 @@ h1, h2, h3, h4 {{ color: {IVORY}; text-shadow: 0 1px 0 rgba(0,0,0,0.35); }}
 }}
 .welcome h3 {{ font-family: "Cinzel Decorative", serif; color: {IVORY}; margin: 0 0 .35rem 0; }}
 .welcome p {{ font-family: "IM Fell English SC", serif; font-size: 1.05rem; line-height: 1.3; color: {IVORY}; opacity: .92; }}
-
 /* Hide Streamlit chrome */
 header, footer, #MainMenu {{ visibility: hidden; }}
 [data-testid="stToolbar"] {{ visibility: hidden; height: 0; position: fixed; }}
 .main .block-container {{ padding-top: 0.8rem !important; }}
 div[data-testid="stHeader"] {{ display: none; }}
-
-/* Gold rims & button glow */
-.stTextInput > div, .stNumberInput > div, .stSelectbox > div, .stMultiSelect > div,
-.stTextArea > div, .stFileUploader > div, .stAlert, .stDataFrame,
-.stTabs [data-baseweb="tab"], .st-expander, .stMetric, .stCaptionContainer,
-.kpi, .welcome, .result-card {{
-  border: 1px solid rgba(208,168,92,.35) !important;
-  border-radius: 14px !important;
-  box-shadow: 0 10px 24px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.06) !important;
-  background: rgba(14,18,38,.60);
-}}
-.stButton > button, .stDownloadButton > button, .stLinkButton > a {{
-  border: 1px solid rgba(208,168,92,.55);
-  color: {IVORY} !important;
-  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
-  border-radius: 12px; padding: .5rem .9rem;
-  box-shadow: 0 6px 16px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.06);
-  transition: border-color .15s, box-shadow .15s, transform .05s;
-}}
-.stButton > button:hover, .stDownloadButton > button:hover, .stLinkButton > a:hover {{
-  border-color: {GOLD};
-  box-shadow: 0 8px 22px rgba(0,0,0,.35), 0 0 0 2px rgba(208,168,92,.25) inset;
-  transform: translateY(-1px);
-}}
 </style>
 """, unsafe_allow_html=True)
-
-# Kill any accidental echo of hex codes in markdown outputs
-st.components.v1.html("""
-<script>
-(function(){
-  const kill = ['#eae7e1', '#d0a85c'];
-  try{
-    const scope = window.parent?.document || document;
-    scope.querySelectorAll('p,div,span,code').forEach(el=>{
-      const t=(el.textContent||'').trim();
-      if (kill.includes(t)) el.style.display='none';
-    });
-  }catch(e){}
-})();
-</script>
-""", height=0)
 
 # ------------------------------------------------------------
 # State & ledger bootstrap
@@ -332,9 +162,10 @@ if "ledger" not in st.session_state:
         "renown_gain","notoriety_gain","EI_breakdown","notes","complication"
     ])
 if "last_angle" not in st.session_state: st.session_state.last_angle = 0
+if "selected_index" not in st.session_state: st.session_state.selected_index = None
 
 # ------------------------------------------------------------
-# Google Sheets plumbing (optional)
+# Google Sheets (optional – safe no-ops if secrets missing)
 # ------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
 def _build_gspread_client(sa_json: dict):
@@ -410,21 +241,6 @@ def load_ledger_from_sheets():
     except Exception as e:
         return pd.DataFrame(columns=st.session_state.ledger.columns), str(e)
 
-def recalc_totals(df: pd.DataFrame):
-    r = int(pd.to_numeric(df.get("renown_gain", pd.Series()), errors="coerce").fillna(0).sum())
-    n = int(pd.to_numeric(df.get("notoriety_gain", pd.Series()), errors="coerce").fillna(0).sum())
-    return r, n
-
-if "bootstrapped" not in st.session_state:
-    df_remote, err = load_ledger_from_sheets()
-    if err:
-        st.sidebar.info("Sheets not loaded (check secrets or access). Running with local session state.")
-    else:
-        if not df_remote.empty:
-            st.session_state.ledger = df_remote
-        st.session_state.renown, st.session_state.notoriety = recalc_totals(st.session_state.ledger)
-    st.session_state.bootstrapped = True
-
 # ------------------------------------------------------------
 # Mechanics helpers
 # ------------------------------------------------------------
@@ -441,7 +257,6 @@ def compute_BI(arc, inputs):
     if arc=="Sabotage Evil": return inputs.get("impact_level",1)
     return inputs.get("expose_level",1)
 def compute_base_score(BI, EB, OQM_list): return clamp(BI+EB+clamp(sum(OQM_list),-2,2),1,7)
-def low_or_high(n): return "High" if n>=10 else "Low"
 
 # ------------------------------------------------------------
 # Sidebar (logo + welcome + mural)
@@ -457,47 +272,127 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-MURAL_H       = 1120
-MURAL_OPACITY = 0.8
-
 st.sidebar.markdown(f"""
 <style>
 [data-testid="stSidebar"] {{ position: relative; }}
 #sidebar-mural {{
-  position: relative; height: {MURAL_H}px; margin-top: 8px; z-index: 0;
+  position: relative; height: 1120px; margin-top: 8px; z-index: 0;
 }}
 #sidebar-mural::before {{
   content: ""; position: absolute; inset: 0;
   background: url("data:image/png;base64,{MURAL_B64}") no-repeat center top / contain;
-  opacity: {MURAL_OPACITY}; pointer-events: none;
-  filter: drop-shadow(0 6px 12px rgba(0,0,0,.25));
+  opacity: 0.8; pointer-events: none;
+  filter: drop-shadow(0 6px 12px rgba(0,0,0,0.25));
 }}
 </style>
 <div id="sidebar-mural" aria-hidden="true"></div>
 """, unsafe_allow_html=True)
 
 # ------------------------------------------------------------
-# KPI cards
+# Crest + tiers — single component (no cross-frame)
+# ------------------------------------------------------------
+def render_renown_block(value: int):
+    html = f"""
+    <style>
+      .score-wrap {{
+        display:flex; align-items:center; gap:14px; cursor:pointer; user-select:none;
+      }}
+      .score-wrap img{{ width: 180px; height:180px; object-fit:contain;
+        filter: drop-shadow(0 6px 12px rgba(0,0,0,.35)); }}
+      .score-wrap .meta .label{{ font-size:15px; color:{IVORY}; opacity:.85; letter-spacing:.4px; }}
+      .score-wrap .meta .val{{ font-size:56px; color:{IVORY}; font-weight:800; line-height:1.05; text-shadow:0 1px 0 rgba(0,0,0,.35); }}
+      .tiers {{ margin-top:10px; padding:14px 16px; border-radius:16px;
+        background: rgba(16,24,32,.55); border:1px solid rgba(208,168,92,.45);
+        box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06); }}
+      .tiers h4 {{ margin:0 0 6px 0; color:{IVORY}; }}
+      .tier-table {{ width:100%; border-collapse:collapse; color:{IVORY}; }}
+      .tier-table th, .tier-table td {{ border-top:1px solid rgba(208,168,92,.25); padding:8px 10px; vertical-align:top; }}
+      .tier-table tr:first-child th, .tier-table tr:first-child td {{ border-top:none; }}
+      .tt-badge {{ color:{GOLD}; font-weight:700; }}
+      #renown_tiers:not(.open) {{ display:none; }}
+    </style>
+    <div id="renown_card" class="score-wrap" title="Click to view tiers">
+      <img src="data:image/png;base64,{RENOWN_IMG_B64}" alt="Renown">
+      <div class="meta"><div class="label">Renown</div><div class="val">{value}</div></div>
+    </div>
+    <div id="renown_tiers" class="tiers">
+      <h4>Veil-Fame perks — subtle favours while the mask stays on</h4>
+      <table class="tier-table">
+        <tr><th>Tier</th><th>Threshold</th><th>Perks</th></tr>
+        <tr><td class="tt-badge">R1</td><td>5</td><td>Street Signals (rumours + ward hand-signs).</td></tr>
+        <tr><td class="tt-badge">R2</td><td>10</td><td>Quiet Hands (once/session safe hand-off nearby).</td></tr>
+        <tr><td class="tt-badge">R3</td><td>15</td><td>Crowd Cover (one round full cover slip-away).</td></tr>
+        <tr><td class="tt-badge">R4</td><td>20</td><td>Whisper Network (advantage vs townsfolk; +1d6 help/session).</td></tr>
+        <tr><td class="tt-badge">R5</td><td>25</td><td>Safehouses (two boltholes; negate one pursuit/adventure).</td></tr>
+        <tr><td class="tt-badge">R6</td><td>30</td><td>Folk Halo (quiet −10% mundane gear; crowd aid once/adventure).</td></tr>
+      </table>
+    </div>
+    <script>
+      document.getElementById('renown_card')?.addEventListener('click',()=>{
+        const el = document.getElementById('renown_tiers');
+        if (el) el.classList.toggle('open');
+      });
+    </script>
+    """
+    st.components.v1.html(html, height=260 + 220)
+
+def render_notoriety_block(value: int):
+    html = f"""
+    <style>
+      .score-wrap {{
+        display:flex; align-items:center; gap:14px; cursor:pointer; user-select:none;
+      }}
+      .score-wrap img{{ width: 180px; height:180px; object-fit:contain;
+        filter: drop-shadow(0 6px 12px rgba(0,0,0,.35)); }}
+      .score-wrap .meta .label{{ font-size:15px; color:{IVORY}; opacity:.85; letter-spacing:.4px; }}
+      .score-wrap .meta .val{{ font-size:56px; color:{IVORY}; font-weight:800; line-height:1.05; text-shadow:0 1px 0 rgba(0,0,0,.35); }}
+      .tiers {{ margin-top:10px; padding:14px 16px; border-radius:16px;
+        background: rgba(16,24,32,.55); border:1px solid rgba(208,168,92,.45);
+        box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06); }}
+      .tiers h4 {{ margin:0 0 6px 0; color:{IVORY}; }}
+      .tier-table {{ width:100%; border-collapse:collapse; color:{IVORY}; }}
+      .tier-table th, .tier-table td {{ border-top:1px solid rgba(208,168,92,.25); padding:8px 10px; vertical-align:top; }}
+      .tier-table tr:first-child th, .tier-table tr:first-child td {{ border-top:none; }}
+      .tt-badge {{ color:#E06565; font-weight:700; }}
+      #notoriety_tiers:not(.open) {{ display:none; }}
+    </style>
+    <div id="notoriety_card" class="score-wrap" title="Click to view tiers">
+      <img src="data:image/png;base64,{NOTORIETY_IMG_B64}" alt="Notoriety">
+      <div class="meta"><div class="label">Notoriety</div><div class="val">{value}</div></div>
+    </div>
+    <div id="notoriety_tiers" class="tiers">
+      <h4>City Heat — escalating responses without unmasking you</h4>
+      <table class="tier-table">
+        <tr><th>Band</th><th>Score</th><th>Response</th></tr>
+        <tr><td class="tt-badge">N0 — Cold</td><td>0–4</td><td>Nothing special.</td></tr>
+        <tr><td class="tt-badge">N1 — Warm</td><td>5–9</td><td>Ward sweeps; ignore → +1 heat.</td></tr>
+        <tr><td class="tt-badge">N2 — Hot</td><td>10–14</td><td>Pattern watch; repeat MOs +2 DC.</td></tr>
+        <tr><td class="tt-badge">N3 — Scalding</td><td>15–19</td><td>Counter-ops; residue detectors.</td></tr>
+        <tr><td class="tt-badge">N4 — Burning</td><td>20–24</td><td>Scry-sweeps; Trace test; fail +2 heat.</td></tr>
+        <tr><td class="tt-badge">N5 — Inferno</td><td>25–30</td><td>Citywide dragnet; curfews; +2 DC.</td></tr>
+      </table>
+    </div>
+    <script>
+      document.getElementById('notoriety_card')?.addEventListener('click',()=>{
+        const el = document.getElementById('notoriety_tiers');
+        if (el) el.classList.toggle('open');
+      });
+    </script>
+    """
+    st.components.v1.html(html, height=260 + 220)
+
+# ------------------------------------------------------------
+# KPI row
 # ------------------------------------------------------------
 c1, c2, c3 = st.columns(3)
-
-with c1:
-    score_card("Renown", st.session_state.renown, RENOWN_IMG_B64,
-               dom_id="renown_card_dom", toggle_target_id="renown_tiers")
-    show_renown_tiers("renown_tiers")
-
-with c2:
-    score_card("Notoriety", st.session_state.notoriety, NOTORIETY_IMG_B64,
-               dom_id="notoriety_card_dom", toggle_target_id="notoriety_tiers")
-    show_notoriety_tiers("notoriety_tiers")
-
-with c3:
-    ward_focus = st.selectbox("Active Ward", ["Dock","Field","South","North","Castle","Trades","Sea"])
+with c1: render_renown_block(st.session_state.renown)
+with c2: render_notoriety_block(st.session_state.notoriety)
+with c3: ward_focus = st.selectbox("Active Ward", ["Dock","Field","South","North","Castle","Trades","Sea"])
 
 # ------------------------------------------------------------
 # Tabs
 # ------------------------------------------------------------
-tab1, tab2, tab3, tab4 = st.tabs(["🗺️ Mission Generator","🎯 Resolve & Log","☸️ Wheel of Fortune","📜 Ledger"])
+tab1, tab2, tab3, tab4 = st.tabs(["🗺️ Mission Generator","🎯 Resolve & Log","☸️ Wheel of Misfortune","📜 Ledger"])
 
 # ---------- Tab 1 ----------
 with tab1:
@@ -539,8 +434,7 @@ with tab1:
         if reused: OQM.append(-1)
 
     BI = compute_BI(arc, inputs)
-    base_score = compute_base_score(BI, EB, OQM)
-    st.markdown(f"**Base Impact:** {BI} • **EB:** {EB} • **OQM sum:** {sum(OQM)} → **Base Score:** {base_score}")
+    base_score = clamp(BI + EB + clamp(sum(OQM), -2, 2), 1, 7)
 
     st.markdown("#### Exposure Index")
     a,b = st.columns(2)
@@ -554,13 +448,13 @@ with tab1:
         conc = st.slider("Concealment (0–3)",0,3,2)
         mis = st.slider("Misdirection (0–2)",0,2,1)
 
-    EI = (vis+noise+sig+wit+mag)-(conc+mis)
+    EI = (vis+noise+sig+wit+mag) - (conc+mis)
     ren_gain = int(round(base_score * {"Help the Poor":1.0,"Sabotage Evil":1.5,"Expose Corruption":2.0}[arc]))
-    def _hm(n): return 1.5 if n>=20 else (1.25 if n>=10 else 1.0)
     cat_base = {"Help the Poor":1,"Sabotage Evil":2,"Expose Corruption":3}[arc]
-    heat = max(0, math.ceil((cat_base + max(0,EI-1) + (1 if nat1 else 0)) * _hm(st.session_state.notoriety)))
+    heat = max(0, math.ceil((cat_base + max(0, EI-1) + (1 if nat1 else 0)) * (1.5 if st.session_state.notoriety>=20 else 1.25 if st.session_state.notoriety>=10 else 1.0)))
     if nat20: heat = max(0, heat-1)
 
+    st.markdown(f"**Base Impact:** {BI} • **EB:** {EB} • **OQM:** {sum(OQM)} → **Base Score:** {base_score}")
     st.markdown(f"**Projected Renown:** {ren_gain} • **Projected Notoriety:** {heat} • **EI:** {EI}")
 
     if st.button("Queue Mission → Resolve & Log", type="primary"):
@@ -589,154 +483,86 @@ with tab2:
             st.session_state.ledger.loc[len(st.session_state.ledger)] = row
             ok, err = append_to_google_sheet([row])
             if ok:
-                st.success("Applied, logged, and synced to Google Sheets.")
+                st.success("Applied, logged, and synced to Sheets.")
                 df_remote, _ = load_ledger_from_sheets()
                 if not df_remote.empty:
                     st.session_state.ledger = df_remote
-                st.session_state.renown, st.session_state.notoriety = recalc_totals(st.session_state.ledger)
             else:
-                st.warning(f"Applied & logged locally, but not synced: {err or 'check secrets/permissions'}")
+                st.warning(f"Local only; Sheets sync failed: {err or 'check secrets/permissions'}")
             st.session_state._queued_mission = None
     else:
         st.info("No queued mission.")
 
-    st.markdown("#### Push Log to Google Sheets")
-    if st.button("Append All Rows to Sheets", type="secondary"):
-        rows = st.session_state.ledger.values.tolist()
-        ok, err = append_to_google_sheet(rows)
-        if ok:
-            st.success(f"Appended {len(rows)} rows.")
-        else:
-            st.error(f"Sheets error: {err or 'Unknown error'}")
-
 # ---------- Tab 3 ----------
 with tab3:
-    st.markdown("### Wheel of Fortune")
-
-    # Defaults & palette
-    st.session_state.setdefault("last_angle", 0)
-    st.session_state.setdefault("selected_index", None)
-
+    st.markdown("### Wheel of Misfortune")
     WHEEL_SIZE = 600
     SPIN_ROTATIONS = random.randint(4, 7)
 
-    # Table by heat (cached)
     heat_state = "High" if st.session_state.notoriety >= 10 else "Low"
     st.caption(f"Heat: **{heat_state}**")
     options = load_complications(heat_state)
     labels = tuple(str(i + 1) for i in range(len(options)))
-
-    # Wheel image (cached)
     wheel_b64 = build_wheel_b64(labels, WHEEL_SIZE, GOLD, IVORY)
 
-    # Hidden Streamlit trigger (clicked by the centre overlay)
-    HIDDEN_LABEL = "SPIN_TRIGGER__73ab"
-    hidden_clicked = st.button(HIDDEN_LABEL, key="spin_hidden_internal")
-
-    if hidden_clicked:
-        n = len(options)
+    # Real Streamlit button — robust and fast
+    spin = st.button("SPIN!", type="primary")
+    if spin:
+        n = len(options) or 1
         idx = random.randrange(n)
         st.session_state.selected_index = idx
         seg = 360 / n
         st.session_state.last_angle = SPIN_ROTATIONS * 360 + (idx + .5) * seg
+        # Optional: append a log row for the spin
         try:
-            comp = options[idx]
             row = [dt.datetime.now().isoformat(timespec="seconds"),
-                   ward_focus, "Complication", "-", "-", "-", 0, 0, "-", "-", comp]
+                   ward_focus, "Complication", "-", "-", "-", 0, 0, "-", "-", options[idx]]
             st.session_state.ledger.loc[len(st.session_state.ledger)] = row
         except Exception:
             pass
 
     angle = st.session_state.last_angle
-    btn_diam = max(96, int(WHEEL_SIZE * 0.18))
-
-    # Wheel + true centre overlay button
     html = f"""
     <style>
       #wheel_wrap {{
-        position: relative; width: {WHEEL_SIZE}px; margin: 0 auto;
-      }}
-      #wheel_container {{
-        position: relative; width: {WHEEL_SIZE}px; height: {WHEEL_SIZE}px;
+        position: relative; width: {WHEEL_SIZE}px; margin: 0 auto 6px;
       }}
       #wheel_img {{
-        width: 100%; height: 100%; border-radius: 50%;
+        width: 100%; height: {WHEEL_SIZE}px; border-radius: 50%;
         box-shadow: 0 10px 40px rgba(0,0,0,.55);
         background: radial-gradient(closest-side, rgba(255,255,255,0.06), transparent);
         transform: rotate({angle}deg);
-        transition: transform 1.1s cubic-bezier(.22,.8,.25,1);
+        transition: transform 1.05s cubic-bezier(.22,.8,.25,1);
       }}
       #pointer {{
-        position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
-        width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent;
+        position: relative; width: 0; height: 0; margin: 0 auto 10px;
+        border-left: 16px solid transparent; border-right: 16px solid transparent;
         border-bottom: 26px solid {GOLD}; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4));
       }}
-      #spin_overlay {{
-        position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
-        width: {btn_diam}px; height: {btn_diam}px; border-radius: {btn_diam/2}px;
-        border: 1px solid rgba(208,168,92,0.45);
-        background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
-        backdrop-filter: blur(8px) saturate(1.1);
-        -webkit-backdrop-filter: blur(8px) saturate(1.1);
-        box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,0.06);
-        color: {IVORY}; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
-        cursor: pointer; user-select: none; display: grid; place-items: center;
-      }}
-      #spin_overlay:hover {{ transform: translate(-50%,-50%) scale(1.02); }}
     </style>
-
+    <div id="pointer"></div>
     <div id="wheel_wrap">
-      <div id="wheel_container">
-        <div id="pointer"></div>
-        <img id="wheel_img" src="data:image/png;base64,{wheel_b64}" />
-        <div id="spin_overlay">SPIN!</div>
-      </div>
+      <img id="wheel_img" src="data:image/png;base64,{wheel_b64}" />
     </div>
-
-    <script>
-      (function(){{
-        try {{
-          const scope = window.parent?.document || document;
-          const all = scope.querySelectorAll('button');
-          for (const b of all) {{
-            if ((b.innerText || '').trim() === '{HIDDEN_LABEL}') {{
-              window.__spinBtn = b;
-              b.style.display = 'none';
-              break;
-            }}
-          }}
-        }} catch (e) {{}}
-      }})();
-
-      document.getElementById('spin_overlay').addEventListener('click', () => {{
-        try {{ window.__spinBtn?.click(); }} catch (e) {{}}
-      }});
-    </script>
     """
-    st.components.v1.html(html, height=WHEEL_SIZE + 40)
+    st.components.v1.html(html, height=WHEEL_SIZE + 56)
 
-    # Result card (dynamic, bordered)
-    if st.session_state.get("selected_index") is not None:
+    if st.session_state.get("selected_index") is not None and options:
         idx = st.session_state["selected_index"]
         st.markdown(f"""
         <style>
           .result-card {{
-            max-width: 900px; margin: 18px auto 0; padding: 18px 20px;
+            max-width: 900px; margin: 12px auto 0; padding: 18px 20px;
             border-radius: 14px; background: rgba(16,24,32,0.55);
             border: 1px solid rgba(208,168,92,0.45);
-            box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,0.06);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06);
             backdrop-filter: blur(6px) saturate(1.05);
             -webkit-backdrop-filter: blur(6px) saturate(1.05);
             animation: fadein .35s ease-out;
           }}
-          .result-number {{
-            font-size: 13px; letter-spacing: .4px; color: {GOLD}; text-transform: uppercase; opacity: .9; margin-bottom: 6px;
-          }}
+          .result-number {{ font-size: 13px; letter-spacing: .4px; color: {GOLD}; text-transform: uppercase; opacity: .9; margin-bottom: 6px; }}
           .result-text {{ color: {IVORY}; line-height: 1.5; font-size: 16px; }}
-          @keyframes fadein {{
-            from {{ opacity: 0; transform: translateY(6px); }}
-            to   {{ opacity: 1; transform: none; }}
-          }}
+          @keyframes fadein {{ from {{ opacity: 0; transform: translateY(6px); }} to {{ opacity: 1; transform: none; }} }}
         </style>
         <div class="result-card">
           <div class="result-number">Result {idx+1:02d} / {len(options):02d}</div>
@@ -753,8 +579,7 @@ with tab4:
             st.error(f"Reload failed: {err}")
         else:
             st.session_state.ledger = df_remote
-            st.session_state.renown, st.session_state.notoriety = recalc_totals(st.session_state.ledger)
-            st.success("Ledger reloaded and counters recalculated.")
+            st.success("Ledger reloaded.")
     st.dataframe(st.session_state.ledger, use_container_width=True, height=420)
     csv = st.session_state.ledger.to_csv(index=False).encode("utf-8")
     st.download_button("Download CSV", csv, "night_owls_ledger.csv", "text/csv")

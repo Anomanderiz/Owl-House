@@ -7,27 +7,15 @@ import os
 
 st.set_page_config(page_title="Night Owls — Waterdeep Secret Club", page_icon="🦉", layout="wide")
 
-# ---------- Assets ----------
-def load_b64(path):
+@st.cache_data(show_spinner=False)
+def b64_of(path: str) -> str:
     with open(path, "rb") as f:
+        import base64
         return base64.b64encode(f.read()).decode("utf-8")
 
-BG_B64 = load_b64("assets/bg.png")
-LOGO = Image.open("assets/logo.png")
-
-GOLD = "#d0a85c"; IVORY = "#eae7e1"
-
-# Provide fallbacks for colours if not already defined elsewhere
-try:
-    IVORY
-except NameError:
-    IVORY = "#EAE6D7"
-try:
-    GOLD
-except NameError:
-    GOLD = "#D0A85C"
-
-def load_b64_first(*paths):
+@st.cache_data(show_spinner=False)
+def first_existing_b64(paths: tuple[str, ...]) -> str:
+    import base64
     for p in paths:
         try:
             with open(p, "rb") as f:
@@ -36,14 +24,71 @@ def load_b64_first(*paths):
             continue
     return ""
 
-RENOWN_IMG_B64 = load_b64_first(
+@st.cache_data(show_spinner=False)
+def read_bytes(path: str) -> bytes:
+    with open(path, "rb") as f:
+        return f.read()
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def load_complications(heat_state: str) -> list[str]:
+    table_path = ("assets/complications_high.json"
+                  if heat_state == "High" else "assets/complications_low.json")
+    import json
+    with open(table_path, "r") as fh:
+        return json.load(fh)
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def build_wheel_b64(labels: tuple[str, ...], size: int, gold: str, ivory: str) -> str:
+    # draw once, reuse forever (until inputs change)
+    from PIL import Image, ImageDraw, ImageFont
+    import io, math, base64
+    n = len(labels)
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    cx, cy = size // 2, size // 2
+    r = size // 2 - 6
+    cols = ["#173b5a", "#12213f", "#0d3b4f", "#112b44"]
+    for i in range(n):
+        start = 360 * i / n - 90
+        end   = 360 * (i + 1) / n - 90
+        d.pieslice([cx - r, cy - r, cx + r, cy + r], start, end,
+                   fill=cols[i % len(cols)], outline="#213a53")
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=gold, width=6)
+    try:
+        font = ImageFont.truetype("DejaVuSans.ttf", 14)
+    except Exception:
+        font = ImageFont.load_default()
+    for i, lab in enumerate(labels):
+        ang = math.radians(360 * (i + .5) / n - 90)
+        tx = cx + int((r - 60) * math.cos(ang))
+        ty = cy + int((r - 60) * math.sin(ang))
+        d.text((tx, ty), lab, fill=ivory, font=font, anchor="mm")
+    buf = io.BytesIO(); img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+# ---------- Assets ----------
+def load_b64(path):
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
+
+BG_B64 = b64_of("assets/bg.png")
+from PIL import Image
+import io, base64 as _b64
+LOGO = Image.open(io.BytesIO(read_bytes("assets/logo.png")))
+
+RENOWN_IMG_B64 = first_existing_b64((
     "assets/renown_gold.png",
-    "/mnt/data/cabaed5d-81c5-4b62-bd7d-ed6fccca6077.png"  # fallback
-)
-NOTORIETY_IMG_B64 = load_b64_first(
+    "/mnt/data/cabaed5d-81c5-4b62-bd7d-ed6fccca6077.png",
+))
+NOTORIETY_IMG_B64 = first_existing_b64((
     "assets/notoriety_red.png",
-    "/mnt/data/bd0e7b0b-2ded-4272-8cd4-4753e0d0c8c8.png"  # fallback
-)
+    "/mnt/data/bd0e7b0b-2ded-4272-8cd4-4753e0d0c8c8.png",
+))
+
+MURAL_B64 = first_existing_b64((
+    "assets/mural_sidebar.png",
+    "assets/mural.png",
+))
 
 st.markdown("""
 <style>
@@ -62,37 +107,20 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def score_card(title: str, value: int, img_b64: str, trigger_label: str, dom_id: str):
-    """Minimal KPI badge: large crest + value; click fires the hidden Streamlit button."""
+def score_card(title: str, value: int, img_b64: str, dom_id: str, toggle_target_id: str | None = None):
     html = '''
     <style>
       .score-badge{
-        position: relative;
-        display: inline-flex;
-        align-items: center;
-        gap: 14px;
-        padding: 6px 0;              /* tiny breathing room; prevents clipping */
-        background: transparent;      /* no rectangle */
-        border: none;
-        cursor: pointer; user-select: none;
+        position: relative; display: inline-flex; align-items: center; gap: 14px;
+        padding: 6px 0; background: transparent; border: none; cursor: pointer; user-select: none;
       }
-      .score-badge img{
-        width: 250px; height: 250px; object-fit: contain;
-        filter: drop-shadow(0 6px 12px rgba(0,0,0,.35));
-      }
-      .score-badge .label{
-        font-size: 15px; color: __IVORY__; opacity: .85; letter-spacing: .4px;
-      }
-      .score-badge .val{
-        font-size: 56px; color: __IVORY__; font-weight: 800; line-height: 1.05;
-        text-shadow: 0 1px 0 rgba(0,0,0,.35);
-      }
-      @media (max-width: 900px){
-        .score-badge img{ width: 72px; height: 72px; }
-        .score-badge .val{ font-size: 42px; }
-      }
+      .score-badge img{ width: 250px; height: 250px; object-fit: contain;
+        filter: drop-shadow(0 6px 12px rgba(0,0,0,.35)); }
+      .score-badge .label{ font-size: 15px; color: __IVORY__; opacity: .85; letter-spacing: .4px; }
+      .score-badge .val{ font-size: 56px; color: __IVORY__; font-weight: 800; line-height: 1.05;
+        text-shadow: 0 1px 0 rgba(0,0,0,.35); }
+      @media (max-width: 900px){ .score-badge img{ width: 72px; height: 72px; } .score-badge .val{ font-size: 42px; } }
     </style>
-
     <div class="score-badge" id="__DOMID__" title="Click to view tiers">
       <img src="data:image/png;base64,__IMG__" alt="__TITLE__">
       <div class="meta">
@@ -100,48 +128,41 @@ def score_card(title: str, value: int, img_b64: str, trigger_label: str, dom_id:
         <div class="val">__VALUE__</div>
       </div>
     </div>
-
     <script>
       (function(){
-        /* hide the trigger button and relay clicks to it */
-        try{
-          const btns = window.parent.document.querySelectorAll('button');
-          for (const b of btns) if ((b.innerText||'').trim()==='__TRIGGER__') b.style.display='none';
-        }catch(e){}
         const card = document.getElementById('__DOMID__');
+        const targetId = '__TARGET__';
         card?.addEventListener('click', ()=>{
-          try{
-            const btns = window.parent.document.querySelectorAll('button');
-            for (const b of btns) { if ((b.innerText||'').trim()==='__TRIGGER__'){ b.click(); break; } }
-          }catch(e){}
+          if (!targetId) return;
+          const el = document.getElementById(targetId);
+          if (el) el.classList.toggle('open');
         });
       })();
     </script>
     '''
     html = (html
-            .replace('__IVORY__', IVORY)
-            .replace('__TITLE__', str(title))
-            .replace('__VALUE__', str(value))
-            .replace('__IMG__', img_b64)
-            .replace('__TRIGGER__', trigger_label)
-            .replace('__DOMID__', dom_id))
-    st.components.v1.html(html, height=260)  # taller iFrame so the 96px crest + shadow never clips
+      .replace('__IVORY__', IVORY)
+      .replace('__TITLE__', str(title))
+      .replace('__VALUE__', str(value))
+      .replace('__IMG__', img_b64)
+      .replace('__DOMID__', dom_id)
+      .replace('__TARGET__', toggle_target_id or ""))
+    st.components.v1.html(html, height=260)
 
-def show_renown_tiers():
+def show_renown_tiers(container_id="renown_tiers"):
     html = '''
     <style>
-      .tiers {
-        margin-top: 10px; padding: 14px 16px; border-radius: 16px;
+      .tiers { margin-top: 10px; padding: 14px 16px; border-radius: 16px;
         background: rgba(16,24,32,.55); border: 1px solid rgba(208,168,92,.45);
-        box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
-      }
+        box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06); }
       .tiers h4 { margin: 0 0 6px 0; color: __IVORY__; }
       .tier-table { width: 100%; border-collapse: collapse; color: __IVORY__; }
       .tier-table th, .tier-table td { border-top: 1px solid rgba(208,168,92,.25); padding: 8px 10px; vertical-align: top; }
       .tier-table tr:first-child th, .tier-table tr:first-child td { border-top: none; }
       .tt-badge { color: __GOLD__; font-weight: 700; }
+      .tiers:not(.open) { display: none; }   /* hidden until toggled */
     </style>
-    <div class="tiers">
+    <div id="__ID__" class="tiers">
       <h4>Veil-Fame perks — subtle favours while the mask stays on</h4>
       <table class="tier-table">
         <tr><th>Tier</th><th>Threshold</th><th>Perks (quiet, deniable)</th></tr>
@@ -154,23 +175,23 @@ def show_renown_tiers():
       </table>
     </div>
     '''
-    st.markdown(html.replace('__IVORY__', IVORY).replace('__GOLD__', GOLD), unsafe_allow_html=True)
+    st.markdown(html.replace('__IVORY__', IVORY).replace('__GOLD__', GOLD).replace('__ID__', container_id),
+                unsafe_allow_html=True)
 
-def show_notoriety_tiers():
+def show_notoriety_tiers(container_id="notoriety_tiers"):
     html = '''
     <style>
-      .tiers {
-        margin-top: 10px; padding: 14px 16px; border-radius: 16px;
+      .tiers { margin-top: 10px; padding: 14px 16px; border-radius: 16px;
         background: rgba(16,24,32,.55); border: 1px solid rgba(208,168,92,.45);
-        box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
-      }
+        box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06); }
       .tiers h4 { margin: 0 0 6px 0; color: __IVORY__; }
       .tier-table { width: 100%; border-collapse: collapse; color: __IVORY__; }
       .tier-table th, .tier-table td { border-top: 1px solid rgba(208,168,92,.25); padding: 8px 10px; vertical-align: top; }
       .tier-table tr:first-child th, .tier-table tr:first-child td { border-top: none; }
       .tt-badge { color: #E06565; font-weight: 700; }
+      .tiers:not(.open) { display: none; }   /* hidden until toggled */
     </style>
-    <div class="tiers">
+    <div id="__ID__" class="tiers">
       <h4>City Heat — escalating responses without unmasking you</h4>
       <table class="tier-table">
         <tr><th>Band</th><th>Score</th><th>City response (mechanical pressure, no identity reveal)</th></tr>
@@ -517,46 +538,13 @@ c1, c2, c3 = st.columns(3)
 
 with c1:
     score_card("Renown", st.session_state.renown, RENOWN_IMG_B64,
-               RENOWN_TRIGGER_LABEL, "renown_card_dom")
+               dom_id="renown_card_dom", toggle_target_id="renown_tiers")
+    show_renown_tiers("renown_tiers")
 
 with c2:
     score_card("Notoriety", st.session_state.notoriety, NOTORIETY_IMG_B64,
-               NOTORIETY_TRIGGER_LABEL, "notoriety_card_dom")
-
-    # --- heat controls live directly under Notoriety ---
-    btnL, btnP = st.columns(2)
-
-    with btnL:
-        if st.button("Lie Low (−1/−2 Heat)", key="btn_lie_low"):
-            drop = 2 if st.session_state.notoriety >= 10 else 1
-            st.session_state.notoriety = max(0, st.session_state.notoriety - drop)
-            # log + try to sync (unchanged)
-            adj = [dt.datetime.now().isoformat(timespec="seconds"), ward_focus,
-                   "Adjustment: Lie Low", "-", "-", "-", 0, -drop, "-", "auto", ""]
-            st.session_state.ledger.loc[len(st.session_state.ledger)] = adj
-            ok, err = append_to_google_sheet([adj])
-            if ok:
-                df_remote, _ = load_ledger_from_sheets()
-                if not df_remote.empty: st.session_state.ledger = df_remote
-                st.session_state.renown, st.session_state.notoriety = recalc_totals(st.session_state.ledger)
-                st.success(f"Heat reduced by {drop} and logged.")
-            else:
-                st.warning(f"Logged locally but not synced: {err or 'check secrets/permissions'}")
-
-    with btnP:
-        if st.button("Proxy Charity (−1 Heat)", key="btn_proxy_charity"):
-            st.session_state.notoriety = max(0, st.session_state.notoriety - 1)
-            adj = [dt.datetime.now().isoformat(timespec="seconds"), ward_focus,
-                   "Adjustment: Proxy Charity", "-", "-", "-", 0, -1, "-", "auto", ""]
-            st.session_state.ledger.loc[len(st.session_state.ledger)] = adj
-            ok, err = append_to_google_sheet([adj])
-            if ok:
-                df_remote, _ = load_ledger_from_sheets()
-                if not df_remote.empty: st.session_state.ledger = df_remote
-                st.session_state.renown, st.session_state.notoriety = recalc_totals(st.session_state.ledger)
-                st.success("Heat −1 and logged.")
-            else:
-                st.warning(f"Logged locally but not synced: {err or 'check secrets/permissions'}")
+               dom_id="notoriety_card_dom", toggle_target_id="notoriety_tiers")
+    show_notoriety_tiers("notoriety_tiers")
 
 with c3:
     ward_focus = st.selectbox("Active Ward", ["Dock","Field","South","North","Castle","Trades","Sea"])

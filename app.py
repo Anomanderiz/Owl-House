@@ -815,37 +815,37 @@ with tab3:
     st.components.v1.html(html, height=WHEEL_SIZE + 40)
 
     # ---------- Result card (dynamic, bordered, pretty) ----------
-if st.session_state.get("selected_index") is not None:
-    idx = st.session_state["selected_index"]
-    st.markdown(f"""
-    <style>
-      .result-card {{
-        max-width: 900px; margin: 18px auto 0; padding: 18px 20px;
-        border-radius: 14px;
-        background: rgba(16,24,32,0.55);
-        border: 1px solid rgba(208,168,92,0.45);
-        box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,0.06);
-        backdrop-filter: blur(6px) saturate(1.05);
-        -webkit-backdrop-filter: blur(6px) saturate(1.05);
-        animation: fadein .35s ease-out;
-      }}
-      .result-number {{
-        font-size: 13px; letter-spacing: .4px; color: {GOLD}; text-transform: uppercase; opacity: .9;
-        margin-bottom: 6px;
-      }}
-      .result-text {{
-        color: {IVORY}; line-height: 1.5; font-size: 16px;
-      }}
-      @keyframes fadein {{
-        from {{ opacity: 0; transform: translateY(6px); }}
-        to   {{ opacity: 1; transform: none; }}
-      }}
-    </style>
-    <div class="result-card">
-      <div class="result-number">Result {idx+1:02d} / {len(options):02d}</div>
-      <div class="result-text">{options[idx]}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    if st.session_state.get("selected_index") is not None:
+        idx = st.session_state["selected_index"]
+        st.markdown(f"""
+        <style>
+          .result-card {{
+            max-width: 900px; margin: 18px auto 0; padding: 18px 20px;
+            border-radius: 14px;
+            background: rgba(16,24,32,0.55);
+            border: 1px solid rgba(208,168,92,0.45);
+            box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,0.06);
+            backdrop-filter: blur(6px) saturate(1.05);
+            -webkit-backdrop-filter: blur(6px) saturate(1.05);
+            animation: fadein .35s ease-out;
+          }}
+          .result-number {{
+            font-size: 13px; letter-spacing: .4px; color: {GOLD}; text-transform: uppercase; opacity: .9;
+            margin-bottom: 6px;
+          }}
+          .result-text {{
+            color: {IVORY}; line-height: 1.5; font-size: 16px;
+          }}
+          @keyframes fadein {{
+            from {{ opacity: 0; transform: translateY(6px); }}
+            to   {{ opacity: 1; transform: none; }}
+          }}
+        </style>
+        <div class="result-card">
+          <div class="result-number">Result {idx+1:02d} / {len(options):02d}</div>
+          <div class="result-text">{options[idx]}</div>
+        </div>
+        """, unsafe_allow_html=True)
 # ---------- Tab 4 ----------
 with tab4:
     st.markdown("### Ledger")

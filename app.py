@@ -1,21 +1,25 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import math, random, io, json, base64, datetime as dt
+import math, random, io, json, base64, datetime as dt, os
+from typing import Optional, Tuple, List
 from PIL import Image, ImageDraw, ImageFont
-import os
 
+# ------------------------------------------------------------
+# Page config
+# ------------------------------------------------------------
 st.set_page_config(page_title="Night Owls — Waterdeep Secret Club", page_icon="🦉", layout="wide")
 
+# ------------------------------------------------------------
+# Cached helpers
+# ------------------------------------------------------------
 @st.cache_data(show_spinner=False)
 def b64_of(path: str) -> str:
     with open(path, "rb") as f:
-        import base64
         return base64.b64encode(f.read()).decode("utf-8")
 
 @st.cache_data(show_spinner=False)
-def first_existing_b64(paths: tuple[str, ...]) -> str:
-    import base64
+def first_existing_b64(paths: Tuple[str, ...]) -> str:
     for p in paths:
         try:
             with open(p, "rb") as f:
@@ -30,18 +34,14 @@ def read_bytes(path: str) -> bytes:
         return f.read()
 
 @st.cache_data(show_spinner=False, max_entries=8)
-def load_complications(heat_state: str) -> list[str]:
-    table_path = ("assets/complications_high.json"
-                  if heat_state == "High" else "assets/complications_low.json")
-    import json
+def load_complications(heat_state: str) -> List[str]:
+    table_path = "assets/complications_high.json" if heat_state == "High" else "assets/complications_low.json"
     with open(table_path, "r") as fh:
         return json.load(fh)
 
 @st.cache_data(show_spinner=False, max_entries=8)
-def build_wheel_b64(labels: tuple[str, ...], size: int, gold: str, ivory: str) -> str:
-    # draw once, reuse forever (until inputs change)
-    from PIL import Image, ImageDraw, ImageFont
-    import io, math, base64
+def build_wheel_b64(labels: Tuple[str, ...], size: int, gold: str, ivory: str) -> str:
+    # draw once, reuse (until inputs change)
     n = len(labels)
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -63,17 +63,14 @@ def build_wheel_b64(labels: tuple[str, ...], size: int, gold: str, ivory: str) -
         tx = cx + int((r - 60) * math.cos(ang))
         ty = cy + int((r - 60) * math.sin(ang))
         d.text((tx, ty), lab, fill=ivory, font=font, anchor="mm")
-    buf = io.BytesIO(); img.save(buf, format="PNG")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
-# ---------- Assets ----------
-def load_b64(path):
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
-
+# ------------------------------------------------------------
+# Assets & theme colours (define before any f-strings)
+# ------------------------------------------------------------
 BG_B64 = b64_of("assets/bg.png")
-from PIL import Image
-import io, base64 as _b64
 LOGO = Image.open(io.BytesIO(read_bytes("assets/logo.png")))
 
 RENOWN_IMG_B64 = first_existing_b64((
@@ -84,34 +81,30 @@ NOTORIETY_IMG_B64 = first_existing_b64((
     "assets/notoriety_red.png",
     "/mnt/data/bd0e7b0b-2ded-4272-8cd4-4753e0d0c8c8.png",
 ))
-
 MURAL_B64 = first_existing_b64((
     "assets/mural_sidebar.png",
     "assets/mural.png",
 ))
 
-# Theme colours (define BEFORE any f-strings that reference them)
 GOLD  = globals().get("GOLD",  "#d0a85c")
 IVORY = globals().get("IVORY", "#eae7e1")
 
+# ------------------------------------------------------------
+# Small CSS for card overflow safety
+# ------------------------------------------------------------
 st.markdown("""
 <style>
-/* Let KPI cards breathe; stop columns from cropping the bottom edge/shadow */
-.kpi-card, .score-card{
-  padding-bottom: 20px !important;
-  margin-bottom: 12px !important;
-  overflow: visible !important;
-}
-/* Streamlit column wrappers can clip children; allow overflow */
-[data-testid="column"] > div:has(.kpi-card),
-[data-testid="column"] > div:has(.score-card){
-  overflow: visible !important;
-  padding-bottom: 8px !important; /* extra room below the card */
+.kpi-card, .score-card{ padding-bottom:20px!important; margin-bottom:12px!important; overflow:visible!important; }
+[data-testid="column"] > div:has(.kpi-card), [data-testid="column"] > div:has(.score-card){
+  overflow:visible!important; padding-bottom:8px!important;
 }
 </style>
 """, unsafe_allow_html=True)
 
-def score_card(title: str, value: int, img_b64: str, dom_id: str, toggle_target_id: str | None = None):
+# ------------------------------------------------------------
+# Score card (client-side toggle of tier panels; no reruns)
+# ------------------------------------------------------------
+def score_card(title: str, value: int, img_b64: str, dom_id: str, toggle_target_id: Optional[str] = None):
     html = '''
     <style>
       .score-badge{
@@ -145,12 +138,12 @@ def score_card(title: str, value: int, img_b64: str, dom_id: str, toggle_target_
     </script>
     '''
     html = (html
-      .replace('__IVORY__', IVORY)
-      .replace('__TITLE__', str(title))
-      .replace('__VALUE__', str(value))
-      .replace('__IMG__', img_b64)
-      .replace('__DOMID__', dom_id)
-      .replace('__TARGET__', toggle_target_id or ""))
+            .replace('__IVORY__', IVORY)
+            .replace('__TITLE__', str(title))
+            .replace('__VALUE__', str(value))
+            .replace('__IMG__', img_b64)
+            .replace('__DOMID__', dom_id)
+            .replace('__TARGET__', toggle_target_id or ""))
     st.components.v1.html(html, height=260)
 
 def show_renown_tiers(container_id="renown_tiers"):
@@ -164,18 +157,18 @@ def show_renown_tiers(container_id="renown_tiers"):
       .tier-table th, .tier-table td { border-top: 1px solid rgba(208,168,92,.25); padding: 8px 10px; vertical-align: top; }
       .tier-table tr:first-child th, .tier-table tr:first-child td { border-top: none; }
       .tt-badge { color: __GOLD__; font-weight: 700; }
-      .tiers:not(.open) { display: none; }   /* hidden until toggled */
+      .tiers:not(.open) { display: none; }
     </style>
     <div id="__ID__" class="tiers">
       <h4>Veil-Fame perks — subtle favours while the mask stays on</h4>
       <table class="tier-table">
         <tr><th>Tier</th><th>Threshold</th><th>Perks (quiet, deniable)</th></tr>
-        <tr><td class="tt-badge">R1</td><td>5</td><td><b>Street Signals</b>: advantage to glean rumours from labourers/urchins; simple hand-signs recognised in Dock/Field/Trades wards.</td></tr>
-        <tr><td class="tt-badge">R2</td><td>10</td><td><b>Quiet Hands</b>: once per session arrange a safe hand-off (stash, message, disguise kit) within a short walk in any ward you’ve worked.</td></tr>
-        <tr><td class="tt-badge">R3</td><td>15</td><td><b>Crowd Cover</b>: once per long rest break line-of-sight in a crowd; gain one round of full cover while slipping away.</td></tr>
-        <tr><td class="tt-badge">R4</td><td>20</td><td><b>Whisper Network</b>: one social check per scene at advantage vs non-elite townsfolk; plus one free d6 help per session for urban navigation or fast scrounge.</td></tr>
-        <tr><td class="tt-badge">R5</td><td>25</td><td><b>Safehouses</b>: two hidden boltholes; short rests can’t be disturbed; once per adventure negate a post-job pursuit.</td></tr>
-        <tr><td class="tt-badge">R6</td><td>30</td><td><b>Folk Halo</b> (anonymous): quiet −10% on mundane gear; once per adventure the crowd “coincidentally” intervenes (blocked alley, sudden distraction, etc.).</td></tr>
+        <tr><td class="tt-badge">R1</td><td>5</td><td><b>Street Signals</b>: advantage to glean rumours; hand-signs in Dock/Field/Trades wards.</td></tr>
+        <tr><td class="tt-badge">R2</td><td>10</td><td><b>Quiet Hands</b>: once/session set up a safe hand-off nearby.</td></tr>
+        <tr><td class="tt-badge">R3</td><td>15</td><td><b>Crowd Cover</b>: once/long rest break line-of-sight for one round.</td></tr>
+        <tr><td class="tt-badge">R4</td><td>20</td><td><b>Whisper Network</b>: 1 social check/scene at advantage vs townsfolk; +1 free d6 help/session.</td></tr>
+        <tr><td class="tt-badge">R5</td><td>25</td><td><b>Safehouses</b>: two boltholes; once/adventure negate a post-job pursuit.</td></tr>
+        <tr><td class="tt-badge">R6</td><td>30</td><td><b>Folk Halo</b>: quiet −10% mundane gear; once/adventure crowd “coincidentally” intervenes.</td></tr>
       </table>
     </div>
     '''
@@ -193,24 +186,26 @@ def show_notoriety_tiers(container_id="notoriety_tiers"):
       .tier-table th, .tier-table td { border-top: 1px solid rgba(208,168,92,.25); padding: 8px 10px; vertical-align: top; }
       .tier-table tr:first-child th, .tier-table tr:first-child td { border-top: none; }
       .tt-badge { color: #E06565; font-weight: 700; }
-      .tiers:not(.open) { display: none; }   /* hidden until toggled */
+      .tiers:not(.open) { display: none; }
     </style>
     <div id="__ID__" class="tiers">
       <h4>City Heat — escalating responses without unmasking you</h4>
       <table class="tier-table">
-        <tr><th>Band</th><th>Score</th><th>City response (mechanical pressure, no identity reveal)</th></tr>
+        <tr><th>Band</th><th>Score</th><th>City response</th></tr>
         <tr><td class="tt-badge">N0 — Cold</td><td>0–4</td><td>Nothing special.</td></tr>
-        <tr><td class="tt-badge">N1 — Warm</td><td>5–9</td><td><b>Ward sweeps</b>: after jobs in hot wards, DC X group Stealth/Deception or a patrol drifts close (minor time loss or +1 heat if ignored).</td></tr>
-        <tr><td class="tt-badge">N2 — Hot</td><td>10–14</td><td><b>Pattern watch</b>: repeat MOs get +2 DCs; weekly bag checks on kits/disguises—fail adds +1 heat.</td></tr>
-        <tr><td class="tt-badge">N3 — Scalding</td><td>15–19</td><td><b>Counter-ops</b>: rivals interfere 1 in 3 missions; residue detectors appear; reusing looks puts Disguise kits at disadvantage.</td></tr>
-        <tr><td class="tt-badge">N4 — Burning</td><td>20–24</td><td><b>Scry-sweeps</b>: wide-angle divinations; any arcane casting during ops risks a Trace test (DC X Arcana/Stealth). Fail = +2 heat and a tail to the scene.</td></tr>
-        <tr><td class="tt-badge">N5 — Inferno</td><td>25–30</td><td><b>Citywide dragnet</b>: curfews in hot wards; +2 DC to stealth/social; a bounty is posted for any intel on “the impostors”.</td></tr>
+        <tr><td class="tt-badge">N1 — Warm</td><td>5–9</td><td>Ward sweeps; ignore → +1 heat.</td></tr>
+        <tr><td class="tt-badge">N2 — Hot</td><td>10–14</td><td>Pattern watch; repeat MOs +2 DC.</td></tr>
+        <tr><td class="tt-badge">N3 — Scalding</td><td>15–19</td><td>Counter-ops; residue detectors; disguise disadvantage on reuse.</td></tr>
+        <tr><td class="tt-badge">N4 — Burning</td><td>20–24</td><td>Scry-sweeps; Trace test on casting; fail +2 heat.</td></tr>
+        <tr><td class="tt-badge">N5 — Inferno</td><td>25–30</td><td>Citywide dragnet; curfews; +2 DC to stealth/social.</td></tr>
       </table>
     </div>
     '''
     st.markdown(html.replace('__IVORY__', IVORY), unsafe_allow_html=True)
 
-# ---------- Styles (Glass + Welcome card) ----------
+# ------------------------------------------------------------
+# Global styles
+# ------------------------------------------------------------
 st.markdown(f"""
 <style>
 @import url("https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English+SC&display=swap");
@@ -237,8 +232,7 @@ st.markdown(f"""
   border: 1px solid rgba(208,168,92,0.22);
   border-radius: 24px;
   box-shadow: 0 20px 50px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06);
-  padding: 1.2rem 1.5rem !important;
-  z-index: 1;
+  padding: 1.2rem 1.5rem !important; z-index: 1;
 }}
 h1, h2, h3, h4 {{ color: {IVORY}; text-shadow: 0 1px 0 rgba(0,0,0,0.35); }}
 .kpi {{
@@ -261,12 +255,6 @@ h1, h2, h3, h4 {{ color: {IVORY}; text-shadow: 0 1px 0 rgba(0,0,0,0.35); }}
   border-color: rgba(208,168,92,0.35);
   border-bottom-color: {GOLD};
 }}
-#wheel_container {{ position: relative; width: 600px; height: 600px; margin: 0 auto; }}
-#wheel_img {{
-  width: 100%; height: 100%; border-radius: 50%;
-  box-shadow: 0 10px 40px rgba(0,0,0,.55);
-  background: radial-gradient(closest-side, rgba(255,255,255,0.06), transparent);
-}}
 #pointer {{
   position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
   width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent;
@@ -275,31 +263,23 @@ h1, h2, h3, h4 {{ color: {IVORY}; text-shadow: 0 1px 0 rgba(0,0,0,0.35); }}
 .dataframe tbody tr {{ background: rgba(10,15,36,0.35); }}
 .dataframe thead tr {{ background: rgba(10,15,36,0.55); }}
 
-/* Welcome card in sidebar */
+/* Sidebar welcome card + mural */
 .welcome {{
   border: 1px solid rgba(208,168,92,0.35);
-  border-radius: 18px;
-  padding: 1rem 1.1rem;
+  border-radius: 18px; padding: 1rem 1.1rem;
   background: rgba(14,18,38,0.70);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04), 0 10px 30px rgba(0,0,0,0.35);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 10px 30px rgba(0,0,0,0.35);
 }}
 .welcome h3 {{ font-family: "Cinzel Decorative", serif; color: {IVORY}; margin: 0 0 .35rem 0; }}
 .welcome p {{ font-family: "IM Fell English SC", serif; font-size: 1.05rem; line-height: 1.3; color: {IVORY}; opacity: .92; }}
-/* Hide Streamlit top bar / header / footer / menu */
+
+/* Hide Streamlit chrome */
 header, footer, #MainMenu {{ visibility: hidden; }}
 [data-testid="stToolbar"] {{ visibility: hidden; height: 0; position: fixed; }}
-/* tighten top spacing a hair since the header is gone */
 .main .block-container {{ padding-top: 0.8rem !important; }}
-
-/* extra belt-and-suspenders for newer builds */
 div[data-testid="stHeader"] {{ display: none; }}
-</style>
-""", unsafe_allow_html=True)
 
-# ---------- Global gold borders & button glow ----------
-st.markdown(f"""
-<style>
-/* Gold-rim boxes: inputs, tables, alerts, widgets, tabs, etc. */
+/* Gold rims & button glow */
 .stTextInput > div, .stNumberInput > div, .stSelectbox > div, .stMultiSelect > div,
 .stTextArea > div, .stFileUploader > div, .stAlert, .stDataFrame,
 .stTabs [data-baseweb="tab"], .st-expander, .stMetric, .stCaptionContainer,
@@ -309,14 +289,13 @@ st.markdown(f"""
   box-shadow: 0 10px 24px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.06) !important;
   background: rgba(14,18,38,.60);
 }}
-/* Buttons (including download/link buttons) */
 .stButton > button, .stDownloadButton > button, .stLinkButton > a {{
   border: 1px solid rgba(208,168,92,.55);
   color: {IVORY} !important;
   background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
   border-radius: 12px; padding: .5rem .9rem;
   box-shadow: 0 6px 16px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.06);
-  transition: border-color .15s ease, box-shadow .15s ease, transform .05s ease;
+  transition: border-color .15s, box-shadow .15s, transform .05s;
 }}
 .stButton > button:hover, .stDownloadButton > button:hover, .stLinkButton > a:hover {{
   border-color: {GOLD};
@@ -326,7 +305,7 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# ---- scrub any accidental hex-code echoes from the top of the page ----
+# Kill any accidental echo of hex codes in markdown outputs
 st.components.v1.html("""
 <script>
 (function(){
@@ -342,7 +321,9 @@ st.components.v1.html("""
 </script>
 """, height=0)
 
-# ---------- State ----------
+# ------------------------------------------------------------
+# State & ledger bootstrap
+# ------------------------------------------------------------
 if "renown" not in st.session_state: st.session_state.renown = 0
 if "notoriety" not in st.session_state: st.session_state.notoriety = 0
 if "ledger" not in st.session_state:
@@ -352,7 +333,9 @@ if "ledger" not in st.session_state:
     ])
 if "last_angle" not in st.session_state: st.session_state.last_angle = 0
 
-# ---------- Google Sheets (via Streamlit secrets) ----------
+# ------------------------------------------------------------
+# Google Sheets plumbing (optional)
+# ------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
 def _build_gspread_client(sa_json: dict):
     import gspread
@@ -362,22 +345,6 @@ def _build_gspread_client(sa_json: dict):
     return gspread.authorize(creds)
 
 def _load_sheets_secrets():
-    """
-    Expect .streamlit/secrets.toml with:
-
-    [sheets]
-    sheet_id = "YOUR_SHEET_ID"
-    worksheet = "Log"         # optional, defaults to "Log"
-
-    [gcp_service_account]     # full service-account JSON fields
-    type = "service_account"
-    project_id = "..."
-    private_key_id = "..."
-    private_key = "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
-    client_email = "..."
-    client_id = "..."
-    token_uri = "https://oauth2.googleapis.com/token"
-    """
     try:
         sa_json = dict(st.secrets["gcp_service_account"])
         cfg = st.secrets["sheets"]
@@ -420,10 +387,8 @@ def append_to_google_sheet(rows: list):
     except Exception as e:
         return False, str(e)
 
-# ---------- Persistent load from Google Sheets ----------
 @st.cache_data(ttl=60, show_spinner=False)
 def load_ledger_from_sheets():
-    """Return (df, err). df has correct dtypes or empty DF on new sheet."""
     sa_json, sheet_id, ws_name, err = _load_sheets_secrets()
     if err:
         return pd.DataFrame(columns=st.session_state.ledger.columns), err
@@ -434,12 +399,10 @@ def load_ledger_from_sheets():
         gc = _build_gspread_client(sa_json)
         sh = gc.open_by_key(sheet_id)
         ws = sh.worksheet(ws_name)
-        values = ws.get_all_values()  # header + rows
+        values = ws.get_all_values()
         if not values:
             return pd.DataFrame(columns=st.session_state.ledger.columns), None
-        df = pd.DataFrame(values[1:], columns=values[0])  # skip header
-
-        # normalize / coerce numeric cols
+        df = pd.DataFrame(values[1:], columns=values[0])
         for col in ["BI", "EB", "OQM", "renown_gain", "notoriety_gain"]:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
@@ -452,7 +415,6 @@ def recalc_totals(df: pd.DataFrame):
     n = int(pd.to_numeric(df.get("notoriety_gain", pd.Series()), errors="coerce").fillna(0).sum())
     return r, n
 
-# ---------- Bootstrap from Sheets once ----------
 if "bootstrapped" not in st.session_state:
     df_remote, err = load_ledger_from_sheets()
     if err:
@@ -463,7 +425,9 @@ if "bootstrapped" not in st.session_state:
         st.session_state.renown, st.session_state.notoriety = recalc_totals(st.session_state.ledger)
     st.session_state.bootstrapped = True
 
-# ---------- Mechanics ----------
+# ------------------------------------------------------------
+# Mechanics helpers
+# ------------------------------------------------------------
 def clamp(v, lo, hi): return max(lo, min(hi, v))
 def heat_multiplier(n): return 1.5 if n>=20 else (1.25 if n>=10 else 1.0)
 def renown_from_score(base, arc): return int(round(base * {"Help the Poor":1.0,"Sabotage Evil":1.5,"Expose Corruption":2.0}[arc]))
@@ -477,58 +441,44 @@ def compute_BI(arc, inputs):
     if arc=="Sabotage Evil": return inputs.get("impact_level",1)
     return inputs.get("expose_level",1)
 def compute_base_score(BI, EB, OQM_list): return clamp(BI+EB+clamp(sum(OQM_list),-2,2),1,7)
-def compute_EI(vals):
-    vis,noise,sig,wit,mag,conc,mis = vals
-    return (vis+noise+sig+wit+mag)-(conc+mis)
 def low_or_high(n): return "High" if n>=10 else "Low"
 
-# ---------- Sidebar (Welcome only) ----------
+# ------------------------------------------------------------
+# Sidebar (logo + welcome + mural)
+# ------------------------------------------------------------
 with st.sidebar:
     st.image(LOGO, use_column_width=True)
     st.markdown("""
     <div class="welcome">
       <h3>Night Owls</h3>
-      <p>By moonlight take flight,\n
-      By your deed will the city be freed.\n
+      <p>By moonlight take flight,<br>
+      By your deed will the city be freed.<br>
       You give a hoot!</p>
     </div>
     """, unsafe_allow_html=True)
 
-# Put the mural file in /assets (or keep your current path)
-MURAL_B64 = load_b64_first(
-    "assets/mural_sidebar.png",
-    "assets/mural.png",
-)
-
-MURAL_H      = 1120      # height of the mural area in px (tune to taste)
-MURAL_OPACITY = 0.8    # 0 = invisible, 1 = opaque
+MURAL_H       = 1120
+MURAL_OPACITY = 0.8
 
 st.sidebar.markdown(f"""
 <style>
-/* Ensure the sidebar can host positioned children */
 [data-testid="stSidebar"] {{ position: relative; }}
-
-/* A dedicated block that paints the mural and ignores pointer events */
 #sidebar-mural {{
-  position: relative;
-  height: {MURAL_H}px;
-  margin-top: 8px;                 /* sits just beneath your text box */
-  z-index: 0;
+  position: relative; height: {MURAL_H}px; margin-top: 8px; z-index: 0;
 }}
 #sidebar-mural::before {{
-  content: "";
-  position: absolute; inset: 0;
+  content: ""; position: absolute; inset: 0;
   background: url("data:image/png;base64,{MURAL_B64}") no-repeat center top / contain;
-  opacity: {MURAL_OPACITY};
-  pointer-events: none;            /* don't block clicks/scrolls */
+  opacity: {MURAL_OPACITY}; pointer-events: none;
   filter: drop-shadow(0 6px 12px rgba(0,0,0,.25));
 }}
 </style>
 <div id="sidebar-mural" aria-hidden="true"></div>
 """, unsafe_allow_html=True)
 
-# ---------- KPI score cards (click to reveal tiers) ----------
-
+# ------------------------------------------------------------
+# KPI cards
+# ------------------------------------------------------------
 c1, c2, c3 = st.columns(3)
 
 with c1:
@@ -544,6 +494,9 @@ with c2:
 with c3:
     ward_focus = st.selectbox("Active Ward", ["Dock","Field","South","North","Castle","Trades","Sea"])
 
+# ------------------------------------------------------------
+# Tabs
+# ------------------------------------------------------------
 tab1, tab2, tab3, tab4 = st.tabs(["🗺️ Mission Generator","🎯 Resolve & Log","☸️ Wheel of Fortune","📜 Ledger"])
 
 # ---------- Tab 1 ----------
@@ -551,6 +504,7 @@ with tab1:
     st.markdown("### Create a Mission")
     arc = st.radio("Archetype", ["Help the Poor","Sabotage Evil","Expose Corruption"], horizontal=True)
     col1,col2,col3 = st.columns(3)
+
     if arc=="Help the Poor":
         spend = col1.number_input("Gold Spent", 0, step=5, value=40)
         hh = col2.number_input("Households Aided", 0, step=5, value=25)
@@ -627,29 +581,22 @@ with tab2:
         if st.button("Apply Gains & Log", type="primary"):
             st.session_state.renown += q["renown_gain"]
             st.session_state.notoriety += q["notoriety_gain"]
-
             row = [
                 dt.datetime.now().isoformat(timespec="seconds"), q["ward"], q["archetype"],
                 q["BI"], q["EB"], q["OQM"], q["renown_gain"], q["notoriety_gain"],
                 json.dumps(q["EI_breakdown"]), notes, ""
             ]
-            # add locally
             st.session_state.ledger.loc[len(st.session_state.ledger)] = row
-
-            # try to persist immediately
             ok, err = append_to_google_sheet([row])
             if ok:
                 st.success("Applied, logged, and synced to Google Sheets.")
-                # reload from sheets so counters reflect any external edits
                 df_remote, _ = load_ledger_from_sheets()
                 if not df_remote.empty:
                     st.session_state.ledger = df_remote
                 st.session_state.renown, st.session_state.notoriety = recalc_totals(st.session_state.ledger)
             else:
                 st.warning(f"Applied & logged locally, but not synced: {err or 'check secrets/permissions'}")
-
             st.session_state._queued_mission = None
-
     else:
         st.info("No queued mission.")
 
@@ -666,28 +613,24 @@ with tab2:
 with tab3:
     st.markdown("### Wheel of Fortune")
 
-    # ---------- defaults & palette ----------
+    # Defaults & palette
     st.session_state.setdefault("last_angle", 0)
     st.session_state.setdefault("selected_index", None)
 
-    GOLD  = globals().get("GOLD",  "#d0a85c")
-    IVORY = globals().get("IVORY", "#eae7e1")
-
-    # --- sizing & feel ---
     WHEEL_SIZE = 600
     SPIN_ROTATIONS = random.randint(4, 7)
 
-    # --- table by heat (cached) ---
+    # Table by heat (cached)
     heat_state = "High" if st.session_state.notoriety >= 10 else "Low"
     st.caption(f"Heat: **{heat_state}**")
-    options = load_complications(heat_state)  # cached JSON
+    options = load_complications(heat_state)
     labels = tuple(str(i + 1) for i in range(len(options)))
 
-    # --- wheel image (cached) ---
+    # Wheel image (cached)
     wheel_b64 = build_wheel_b64(labels, WHEEL_SIZE, GOLD, IVORY)
 
-    # ---------- hidden Streamlit trigger (clicked by the centre overlay) ----------
-    HIDDEN_LABEL = "SPIN_TRIGGER__73ab"   # keep it machine-ish and unique
+    # Hidden Streamlit trigger (clicked by the centre overlay)
+    HIDDEN_LABEL = "SPIN_TRIGGER__73ab"
     hidden_clicked = st.button(HIDDEN_LABEL, key="spin_hidden_internal")
 
     if hidden_clicked:
@@ -696,8 +639,6 @@ with tab3:
         st.session_state.selected_index = idx
         seg = 360 / n
         st.session_state.last_angle = SPIN_ROTATIONS * 360 + (idx + .5) * seg
-
-        # journal entry (soft-fails if not configured)
         try:
             comp = options[idx]
             row = [dt.datetime.now().isoformat(timespec="seconds"),
@@ -709,7 +650,7 @@ with tab3:
     angle = st.session_state.last_angle
     btn_diam = max(96, int(WHEEL_SIZE * 0.18))
 
-    # ---------- wheel + true centre overlay button ----------
+    # Wheel + true centre overlay button
     html = f"""
     <style>
       #wheel_wrap {{
@@ -722,6 +663,8 @@ with tab3:
         width: 100%; height: 100%; border-radius: 50%;
         box-shadow: 0 10px 40px rgba(0,0,0,.55);
         background: radial-gradient(closest-side, rgba(255,255,255,0.06), transparent);
+        transform: rotate({angle}deg);
+        transition: transform 1.1s cubic-bezier(.22,.8,.25,1);
       }}
       #pointer {{
         position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
@@ -751,37 +694,35 @@ with tab3:
     </div>
 
     <script>
-        (function(){
-          try {
-            // Cache the hidden button once
-            const scope = window.parent?.document || document;
-            const all = scope.querySelectorAll('button');
-            for (const b of all) {
-              if ((b.innerText || '').trim() === '{{HIDDEN_LABEL}}') {
-                window.__spinBtn = b;
-                b.style.display = 'none';
-                break;
-              }
-            }
-          } catch (e) {}
-        })();
+      (function(){{
+        try {{
+          const scope = window.parent?.document || document;
+          const all = scope.querySelectorAll('button');
+          for (const b of all) {{
+            if ((b.innerText || '').trim() === '{HIDDEN_LABEL}') {{
+              window.__spinBtn = b;
+              b.style.display = 'none';
+              break;
+            }}
+          }}
+        }} catch (e) {{}}
+      }})();
 
-document.getElementById('spin_overlay').addEventListener('click', () => {
-  try { window.__spinBtn?.click(); } catch (e) {}
-});
-</script>
+      document.getElementById('spin_overlay').addEventListener('click', () => {{
+        try {{ window.__spinBtn?.click(); }} catch (e) {{}}
+      }});
+    </script>
     """
     st.components.v1.html(html, height=WHEEL_SIZE + 40)
 
-    # ---------- Result card (dynamic, bordered, pretty) ----------
+    # Result card (dynamic, bordered)
     if st.session_state.get("selected_index") is not None:
         idx = st.session_state["selected_index"]
         st.markdown(f"""
         <style>
           .result-card {{
             max-width: 900px; margin: 18px auto 0; padding: 18px 20px;
-            border-radius: 14px;
-            background: rgba(16,24,32,0.55);
+            border-radius: 14px; background: rgba(16,24,32,0.55);
             border: 1px solid rgba(208,168,92,0.45);
             box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,0.06);
             backdrop-filter: blur(6px) saturate(1.05);
@@ -789,12 +730,9 @@ document.getElementById('spin_overlay').addEventListener('click', () => {
             animation: fadein .35s ease-out;
           }}
           .result-number {{
-            font-size: 13px; letter-spacing: .4px; color: {GOLD}; text-transform: uppercase; opacity: .9;
-            margin-bottom: 6px;
+            font-size: 13px; letter-spacing: .4px; color: {GOLD}; text-transform: uppercase; opacity: .9; margin-bottom: 6px;
           }}
-          .result-text {{
-            color: {IVORY}; line-height: 1.5; font-size: 16px;
-          }}
+          .result-text {{ color: {IVORY}; line-height: 1.5; font-size: 16px; }}
           @keyframes fadein {{
             from {{ opacity: 0; transform: translateY(6px); }}
             to   {{ opacity: 1; transform: none; }}
@@ -805,6 +743,7 @@ document.getElementById('spin_overlay').addEventListener('click', () => {
           <div class="result-text">{options[idx]}</div>
         </div>
         """, unsafe_allow_html=True)
+
 # ---------- Tab 4 ----------
 with tab4:
     st.markdown("### Ledger")

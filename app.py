@@ -751,36 +751,25 @@ with tab3:
     </div>
 
     <script>
-      // Hide the real Streamlit trigger button immediately
-      (function() {{
-        try {{
-          const btns = window.parent.document.querySelectorAll('button');
-          for (const b of btns) {{
-            if ((b.innerText || '').trim() === '{HIDDEN_LABEL}') {{
-              b.style.display = 'none';
-              break;
-            }}
-          }}
-        }} catch (e) {{}}
-      }})();
+        (function(){
+          try {
+            // Cache the hidden button once
+            const scope = window.parent?.document || document;
+            const all = scope.querySelectorAll('button');
+            for (const b of all) {
+              if ((b.innerText || '').trim() === '{{HIDDEN_LABEL}}') {
+                window.__spinBtn = b;
+                b.style.display = 'none';
+                break;
+              }
+            }
+          } catch (e) {}
+        })();
 
-      // Overlay → click hidden Streamlit button
-      document.getElementById('spin_overlay').addEventListener('click', () => {{
-        try {{
-          const btns = window.parent.document.querySelectorAll('button');
-          for (const b of btns) {{
-            if ((b.innerText || '').trim() === '{HIDDEN_LABEL}') {{ b.click(); break; }}
-          }}
-        }} catch (e) {{}}
-      }});
-
-      // Animate wheel to latest angle
-      const w = document.getElementById('wheel_img');
-      if (w) {{
-        w.style.transition = 'transform 3.2s cubic-bezier(.17,.67,.32,1.35)';
-        requestAnimationFrame(() => {{ w.style.transform = 'rotate({angle}deg)'; }});
-      }}
-    </script>
+document.getElementById('spin_overlay').addEventListener('click', () => {
+  try { window.__spinBtn?.click(); } catch (e) {}
+});
+</script>
     """
     st.components.v1.html(html, height=WHEEL_SIZE + 40)
 

@@ -524,15 +524,6 @@ st.sidebar.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ---------- KPI score cards (click to reveal tiers) ----------
-RENOWN_TRIGGER_LABEL = "RENOWN_SCORE_CARD__CLICK"
-NOTORIETY_TRIGGER_LABEL = "NOTORIETY_SCORE_CARD__CLICK"
-renown_clicked = st.button(RENOWN_TRIGGER_LABEL, key="renown_hidden_click")
-notor_clicked  = st.button(NOTORIETY_TRIGGER_LABEL, key="notoriety_hidden_click")
-
-if renown_clicked:
-    st.session_state["show_renown_tiers"] = not st.session_state.get("show_renown_tiers", False)
-if notor_clicked:
-    st.session_state["show_notoriety_tiers"] = not st.session_state.get("show_notoriety_tiers", False)
 
 c1, c2, c3 = st.columns(3)
 

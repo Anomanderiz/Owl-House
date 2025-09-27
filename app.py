@@ -677,44 +677,14 @@ with tab3:
     WHEEL_SIZE = 600
     SPIN_ROTATIONS = random.randint(4, 7)
 
-    # --- table by heat ---
+    # --- table by heat (cached) ---
     heat_state = "High" if st.session_state.notoriety >= 10 else "Low"
     st.caption(f"Heat: **{heat_state}**")
-    table_path = "assets/complications_high.json" if heat_state == "High" else "assets/complications_low.json"
-    options = json.load(open(table_path, "r"))
+    options = load_complications(heat_state)  # cached JSON
+    labels = tuple(str(i + 1) for i in range(len(options)))
 
-    # --- draw wheel helpers ---
-    def draw_wheel(labels, colors=None, size=WHEEL_SIZE):
-        n = len(labels)
-        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        d = ImageDraw.Draw(img)
-        cx, cy = size // 2, size // 2
-        r = size // 2 - 6
-        cols = colors or ["#173b5a", "#12213f", "#0d3b4f", "#112b44"]
-        for i, _ in enumerate(labels):
-            start = 360 * i / n - 90
-            end   = 360 * (i + 1) / n - 90
-            d.pieslice([cx - r, cy - r, cx + r, cy + r], start, end,
-                       fill=cols[i % len(cols)], outline="#213a53")
-        d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=GOLD, width=6)
-        try:
-            font = ImageFont.truetype("DejaVuSans.ttf", 14)
-        except:
-            font = ImageFont.load_default()
-        for i, lab in enumerate(labels):
-            ang = math.radians(360 * (i + .5) / n - 90)
-            tx = cx + int((r - 60) * math.cos(ang))
-            ty = cy + int((r - 60) * math.sin(ang))
-            d.text((tx, ty), lab, fill=IVORY, font=font, anchor="mm")
-        return img
-
-    def b64(img):
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        import base64
-        return base64.b64encode(buf.getvalue()).decode("utf-8")
-
-    wheel_b64 = b64(draw_wheel([str(i + 1) for i in range(len(options))], size=WHEEL_SIZE))
+    # --- wheel image (cached) ---
+    wheel_b64 = build_wheel_b64(labels, WHEEL_SIZE, GOLD, IVORY)
 
     # ---------- hidden Streamlit trigger (clicked by the centre overlay) ----------
     HIDDEN_LABEL = "SPIN_TRIGGER__73ab"   # keep it machine-ish and unique

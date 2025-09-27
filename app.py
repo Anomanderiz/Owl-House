@@ -1,6 +1,6 @@
 # Night Owls — Waterdeep Secret Club (client-first spin & crest toggles)
-# Streamlit ≥ 1.33 recommended (supports st.fragment / st.experimental_fragment).
-# British spelling in comments; minimal redraw; no network I/O on spin path.
+# Streamlit ≥ 1.33 recommended (st.fragment / st.experimental_fragment).
+# British spelling; no Ledger; no network I/O on spin path.
 
 import streamlit as st
 import pandas as pd
@@ -114,7 +114,7 @@ div[data-testid="stHeader"] {{ display: none; }}
 """, unsafe_allow_html=True)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# State (lightweight); keep ledger in-memory only; do not render dataframes
+# State (lightweight); no Ledger anywhere
 # ──────────────────────────────────────────────────────────────────────────────
 ss = st.session_state
 ss.setdefault("renown", 0)
@@ -122,10 +122,6 @@ ss.setdefault("notoriety", 0)
 ss.setdefault("last_angle", 0.0)         # last rendered wheel angle
 ss.setdefault("selected_index", None)    # last complication index
 ss.setdefault("spin_nonce", "")          # guards against duplicate query-param signals
-ss.setdefault("ledger", pd.DataFrame(columns=[
-    "timestamp","ward","archetype","BI","EB","OQM",
-    "renown_gain","notoriety_gain","EI_breakdown","notes","complication"
-]))  # local-only; batch-sync from Resolve tab if you like
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Sidebar
@@ -271,25 +267,16 @@ with c3:
         if st.button("Lie Low (−1/−2 Heat)"):
             drop = 2 if ss.notoriety >= 10 else 1
             ss.notoriety = max(0, ss.notoriety - drop)
-            # local log only (no network)
-            ss.ledger.loc[len(ss.ledger)] = [
-                dt.datetime.now().isoformat(timespec="seconds"), ward_focus,
-                "Adjustment: Lie Low", "-", "-", "-", 0, -drop, "-", "auto", ""
-            ]
             st.success(f"Heat reduced by {drop}.")
     with colB:
         if st.button("Proxy Charity (−1 Heat)"):
             ss.notoriety = max(0, ss.notoriety - 1)
-            ss.ledger.loc[len(ss.ledger)] = [
-                dt.datetime.now().isoformat(timespec="seconds"), ward_focus,
-                "Adjustment: Proxy Charity", "-", "-", "-", 0, -1, "-", "auto", ""
-            ]
             st.success("Heat −1.")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Tabs
 # ──────────────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3 = st.tabs(["🗺️ Mission Generator","🎯 Resolve & Log","☸️ Wheel of Fortune"])
+tab1, tab2, tab3 = st.tabs(["🗺️ Mission Generator","🎯 Resolve","☸️ Wheel of Fortune"])
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Tab 1 — Mission Generator (unchanged logic; practical UI)
@@ -352,7 +339,7 @@ with tab1:
 
     st.markdown(f"**Projected Renown:** {ren_gain} • **Projected Notoriety:** {heat} • **EI:** {EI}")
 
-    if st.button("Queue Mission → Resolve & Log", type="primary"):
+    if st.button("Queue Mission → Resolve", type="primary"):
         ss._queued_mission = dict(
             ward=ward_focus, archetype=arc, BI=BI, EB=EB, OQM=sum(OQM),
             renown_gain=ren_gain, notoriety_gain=heat,
@@ -361,233 +348,224 @@ with tab1:
         st.success("Mission queued.")
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Tab 2 — Resolve & Log (optional push to Sheets lives here, not on spin path)
+# Tab 2 — Resolve (no Ledger persisted; applies to session only)
 # ──────────────────────────────────────────────────────────────────────────────
-# Minimal, practical; keeps all network calls off the spin path.
 with tab2:
-    st.markdown("### Resolve Mission & Write to Log")
+    st.markdown("### Resolve Mission")
     q = ss.get("_queued_mission")
     if q:
         st.json(q)
         notes = st.text_input("Notes (optional)", "")
-        if st.button("Apply Gains & Log", type="primary"):
+        if st.button("Apply Gains", type="primary"):
             ss.renown    += q["renown_gain"]
             ss.notoriety += q["notoriety_gain"]
-            row = [
-                dt.datetime.now().isoformat(timespec="seconds"), q["ward"], q["archetype"],
-                q["BI"], q["EB"], q["OQM"], q["renown_gain"], q["notoriety_gain"],
-                json.dumps(q["EI_breakdown"]), notes, ""
-            ]
-            ss.ledger.loc[len(ss.ledger)] = row
             ss._queued_mission = None
-            st.success("Applied and logged locally.")
+            st.success("Applied to session.")
     else:
         st.info("No queued mission.")
 
-    st.caption("Tip: Batch-sync this session’s rows to Google Sheets with your own helper if desired — not included here to keep the spin path pristine.")
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Tab 3 — Wheel of Fortune (client-first spin, SVG canvas, no blocking I/O)
+# IMPORTANT: Call the fragment *inside* the tab and do not alter container path
+# from within the fragment function. Use stable widget keys/labels.
 # ──────────────────────────────────────────────────────────────────────────────
 @fragment
-def wheel_fragment():
-    with tab3:
-        st.markdown("### Wheel of Fortune")
+def wheel_fragment(options, heat_state, ward_focus, wheel_size=600):
+    # Sentinel anchor to scope DOM queries to this block only
+    anchor_id = "wheel_anchor"
+    st.markdown(f'<div id="{anchor_id}"></div>', unsafe_allow_html=True)
 
-        # Heat affects which table to load; cache IO separately
-        heat_state = "High" if ss.notoriety >= 10 else "Low"
-        st.caption(f"Heat: **{heat_state}**")
-        table_path = "assets/complications_high.json" if heat_state=="High" else "assets/complications_low.json"
-        options    = load_json(table_path)
-        n          = len(options)
-        WHEEL_SIZE = 600
+    # Stable, unambiguous sentinel button (hidden via JS; used to trigger rerun)
+    sentinel_label = "SPIN_SENTINEL"
+    sentinel_key   = "spin_sentinel"
+    sentinel_clicked = st.button(sentinel_label, key=sentinel_key)
 
-        # Hidden sentinel button — scoped; clicked only after client animation ends
-        sentinel_label = f"SPIN_SENTINEL_{uuid.uuid4().hex[:8]}"
-        anchor_id      = f"wheel_anchor_{uuid.uuid4().hex[:6]}"
-        st.markdown(f'<div id="{anchor_id}"></div>', unsafe_allow_html=True)
-        sentinel_clicked = st.button(sentinel_label, key=sentinel_label)
+    # Robust query param reader (supports both new and legacy APIs)
+    def _read_qp(name, default=None):
+        try:
+            if hasattr(st, "query_params"):
+                v = st.query_params.get(name, default)
+            else:
+                v = st.experimental_get_query_params().get(name, default)
+                if isinstance(v, list):
+                    v = v[-1] if v else default
+            return v
+        except Exception:
+            return default
 
-        # Query param channel — client writes spin index + nonce after animation completes
-        qp = getattr(st, "query_params", {})
-        def _get(name, default=None):
-            try:
-                v = qp.get(name)
-                # query_params may be dict-like of str->str
-                return v if v is not None else default
-            except Exception:
-                return default
+    spin_idx_str = _read_qp("spin", None)
+    nonce_str    = _read_qp("spinNonce", None)
 
-        spin_idx_str = _get("spin", None)
-        nonce_str    = _get("spinNonce", None)
+    n          = len(options)
+    WHEEL_SIZE = wheel_size
 
-        # If the sentinel fired AND we see a new nonce, accept the client-selected index
-        if sentinel_clicked and spin_idx_str is not None and nonce_str and nonce_str != ss.spin_nonce:
-            try:
-                idx = int(spin_idx_str)
-                if 0 <= idx < n:
-                    ss.selected_index = idx
-                    ss.spin_nonce     = nonce_str
-                    # compute final angle purely for display continuity
-                    seg = 360.0 / n
-                    rotations = 6  # purely cosmetic on server; real animation is client-side
-                    ss.last_angle = rotations*360.0 + (idx + 0.5)*seg
-                    # local log only; no network
-                    comp = options[idx]
-                    ss.ledger.loc[len(ss.ledger)] = [
-                        dt.datetime.now().isoformat(timespec="seconds"), ward_focus,
-                        "Complication", "-", "-", "-", 0, 0, "-", "-", comp
-                    ]
-            except Exception:
-                pass
+    # If the sentinel fired AND we see a new nonce, accept the client-selected index
+    if sentinel_clicked and spin_idx_str is not None and nonce_str and nonce_str != ss.spin_nonce:
+        try:
+            idx = int(spin_idx_str)
+            if 0 <= idx < n:
+                ss.selected_index = idx
+                ss.spin_nonce     = nonce_str
+                # compute final angle purely for display continuity
+                seg = 360.0 / n
+                rotations = 6  # cosmetic on server; real animation is client-side
+                ss.last_angle = rotations*360.0 + (idx + 0.5)*seg
+        except Exception:
+            pass
 
-        # Build a lightweight SVG once per rerun (no PNG decode)
-        def wheel_svg(n_seg: int, size: int = 600) -> str:
-            r = size/2 - 6
-            cx = cy = size/2
-            cols = ["#173b5a", "#12213f", "#0d3b4f", "#112b44"]
-            parts = [f'<svg id="wheel_svg" viewBox="0 0 {size} {size}" width="{size}" height="{size}" '
-                     f'style="border-radius:50%;box-shadow:0 10px 40px rgba(0,0,0,.55);'
-                     f'background:radial-gradient(closest-side, rgba(255,255,255,.06), transparent);">'
-                     ]
-            for i in range(n_seg):
-                a0 = 2*math.pi*i/n_seg - math.pi/2
-                a1 = 2*math.pi*(i+1)/n_seg - math.pi/2
-                x0, y0 = cx + r*math.cos(a0), cy + r*math.sin(a0)
-                x1, y1 = cx + r*math.cos(a1), cy + r*math.sin(a1)
-                large = 1 if (a1 - a0) % (2*math.pi) > math.pi else 0
-                path = (f"M {cx},{cy} L {x0:.2f},{y0:.2f} "
-                        f"A {r:.2f},{r:.2f} 0 {large} 1 {x1:.2f},{y1:.2f} Z")
-                parts.append(f'<path d="{path}" fill="{cols[i%len(cols)]}" stroke="#213a53" stroke-width="1"/>')
-            parts.append(f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{GOLD}" stroke-width="6"/>')
-            # optional minimalist numbers
-            for i in range(n_seg):
-                ang = 2*math.pi*(i+0.5)/n_seg - math.pi/2
-                tx  = cx + (r-58)*math.cos(ang)
-                ty  = cy + (r-58)*math.sin(ang)
-                parts.append(f'<text x="{tx:.1f}" y="{ty:.1f}" text-anchor="middle" '
-                             f'fill="{IVORY}" font-size="14" font-family="sans-serif">{i+1}</text>')
-            parts.append("</svg>")
-            return "".join(parts)
+    # Build a lightweight SVG once per rerun (no PNG decode)
+    def wheel_svg(n_seg: int, size: int = 600) -> str:
+        r = size/2 - 6
+        cx = cy = size/2
+        cols = ["#173b5a", "#12213f", "#0d3b4f", "#112b44"]
+        parts = [f'<svg id="wheel_svg" viewBox="0 0 {size} {size}" width="{size}" height="{size}" '
+                 f'style="border-radius:50%;box-shadow:0 10px 40px rgba(0,0,0,.55);'
+                 f'background:radial-gradient(closest-side, rgba(255,255,255,.06), transparent);">'
+                 ]
+        for i in range(n_seg):
+            a0 = 2*math.pi*i/n_seg - math.pi/2
+            a1 = 2*math.pi*(i+1)/n_seg - math.pi/2
+            x0, y0 = cx + r*math.cos(a0), cy + r*math.sin(a0)
+            x1, y1 = cx + r*math.cos(a1), cy + r*math.sin(a1)
+            large = 1 if (a1 - a0) % (2*math.pi) > math.pi else 0
+            path = (f"M {cx},{cy} L {x0:.2f},{y0:.2f} "
+                    f"A {r:.2f},{r:.2f} 0 {large} 1 {x1:.2f},{y1:.2f} Z")
+            parts.append(f'<path d="{path}" fill="{cols[i%len(cols)]}" stroke="#213a53" stroke-width="1"/>')
+        parts.append(f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{GOLD}" stroke-width="6"/>')
+        # minimalist numbers
+        for i in range(n_seg):
+            ang = 2*math.pi*(i+0.5)/n_seg - math.pi/2
+            tx  = cx + (r-58)*math.cos(ang)
+            ty  = cy + (r-58)*math.sin(ang)
+            parts.append(f'<text x="{tx:.1f}" y="{ty:.1f}" text-anchor="middle" '
+                         f'fill="{IVORY}" font-size="14" font-family="sans-serif">{i+1}</text>')
+        parts.append("</svg>")
+        return "".join(parts)
 
-        svg_markup = wheel_svg(n, WHEEL_SIZE)
-        btn_diam   = max(96, int(WHEEL_SIZE * 0.18))
+    svg_markup = wheel_svg(n, WHEEL_SIZE)
+    btn_diam   = max(96, int(WHEEL_SIZE * 0.18))
+    angle      = ss.last_angle  # server-known angle for continuity
 
-        # Current display angle (for immediate visual continuity across reruns)
-        angle = ss.last_angle
+    heat_caption = f"Heat: **{heat_state}**"
+    st.caption(heat_caption)
 
-        # Wheel UI — centre overlay button is cheap, flat (no heavy blur)
-        comp_html = f"""
-        <style>
-          #wheel_wrap {{
-            position: relative; width: {WHEEL_SIZE}px; height: {WHEEL_SIZE}px; margin: 0 auto;
-          }}
-          #pointer {{
-            position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
-            width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent;
-            border-bottom: 26px solid {GOLD}; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4));
-          }}
-          #spin_overlay {{
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
-            width: {btn_diam}px; height: {btn_diam}px; border-radius: {btn_diam/2}px;
-            border: 1px solid rgba(208,168,92,0.45);
-            background: rgba(255,255,255,.06); /* flat, cheap */
-            box-shadow: 0 8px 18px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.06);
-            color: {IVORY}; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
-            cursor: pointer; user-select: none; display: grid; place-items: center;
-            transition: transform .08s ease;
-          }}
-          #spin_overlay:hover {{ transform: translate(-50%,-50%) scale(1.015); }}
-        </style>
-        <div id="wheel_wrap">
-          <div id="pointer"></div>
-          {svg_markup}
-          <div id="spin_overlay">SPIN!</div>
+    # Wheel UI — centre overlay button is cheap, flat (no heavy blur)
+    comp_html = f"""
+    <style>
+      #wheel_wrap {{
+        position: relative; width: {WHEEL_SIZE}px; height: {WHEEL_SIZE}px; margin: 0 auto;
+      }}
+      #pointer {{
+        position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+        width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent;
+        border-bottom: 26px solid {GOLD}; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4));
+      }}
+      #spin_overlay {{
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+        width: {btn_diam}px; height: {btn_diam}px; border-radius: {btn_diam/2}px;
+        border: 1px solid rgba(208,168,92,0.45);
+        background: rgba(255,255,255,.06); /* flat, cheap */
+        box-shadow: 0 8px 18px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.06);
+        color: {IVORY}; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+        cursor: pointer; user-select: none; display: grid; place-items: center;
+        transition: transform .08s ease;
+      }}
+      #spin_overlay:hover {{ transform: translate(-50%,-50%) scale(1.015); }}
+    </style>
+    <div id="wheel_wrap">
+      <div id="pointer"></div>
+      {svg_markup}
+      <div id="spin_overlay">SPIN!</div>
+    </div>
+
+    <script>
+    (function(){{
+      const hiddenText = "{sentinel_label}";
+      const anchorId   = "{anchor_id}";
+      const n          = {n};
+      const rotateMs   = 3200; // same as CSS transition time
+      let spinning = false;
+
+      const w = document.getElementById('wheel_svg');
+      if (w) {{
+        w.style.transition = 'transform 3.2s cubic-bezier(.17,.67,.32,1.35)';
+        // apply server-known angle immediately for visual continuity
+        requestAnimationFrame(() => {{ w.style.transform = 'rotate({angle}deg)'; }});
+      }}
+
+      // Hide the sentinel button within the local block only (no global scans)
+      try {{
+        const scope = window.parent.document;
+        const anchor = scope.getElementById(anchorId);
+        const block  = anchor ? anchor.closest('div[data-testid="stVerticalBlock"]') : scope;
+        const btn = Array.from(block.querySelectorAll('button'))
+          .find(b => (b.innerText||'').trim() === hiddenText);
+        if (btn) btn.style.display = 'none';
+      }} catch(e) {{ /* ignore */ }}
+
+      function clickSentinelWith(index) {{
+        try {{
+          const scope  = window.parent.document;
+          const anchor = scope.getElementById(anchorId);
+          const block  = anchor ? anchor.closest('div[data-testid="stVerticalBlock"]') : scope;
+
+          // write spin index & nonce to query params to make state explicit
+          const url = new URL(window.parent.location.href);
+          url.searchParams.set('spin', String(index));
+          url.searchParams.set('spinNonce', String(Date.now()));
+          window.parent.history.replaceState({{}}, '', url.toString());
+
+          // now click the sentinel in this same block to trigger a rerun
+          const btn = Array.from(block.querySelectorAll('button'))
+            .find(b => (b.innerText||'').trim() === hiddenText);
+          btn && btn.click();
+        }} catch(e) {{}}
+      }}
+
+      document.getElementById('spin_overlay')?.addEventListener('click', () => {{
+        if (spinning || !w) return;
+        spinning = true;
+        // client-first: choose random result immediately
+        const idx = Math.floor(Math.random() * n);
+        const seg = 360 / n;
+        const spins = 4 + Math.floor(Math.random() * 3); // 4–6
+        const angle = spins*360 + (idx + 0.5)*seg;
+
+        // start animation immediately
+        requestAnimationFrame(() => {{ w.style.transform = `rotate(${angle}deg)`; }});
+
+        // after animation completes, notify Python via sentinel + query params
+        setTimeout(() => {{
+          clickSentinelWith(idx);
+          spinning = false;
+        }}, rotateMs + 50);
+      }});
+    }})();
+    </script>
+    """
+    st.components.v1.html(comp_html, height=WHEEL_SIZE + 40)
+
+    # Pretty result card (renders only if a result exists; no heavy effects)
+    if ss.get("selected_index") is not None:
+        idx = ss["selected_index"]
+        st.markdown(f"""
+        <div style="
+          max-width:900px;margin:18px auto 0;padding:18px 20px;border-radius:14px;
+          background:rgba(16,24,32,.55);border:1px solid rgba(208,168,92,.45);
+          box-shadow:0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
+          animation:fadein .35s ease-out;">
+          <div style="font-size:13px;letter-spacing:.4px;color:{GOLD};text-transform:uppercase;opacity:.9;margin-bottom:6px;">
+            Result {idx+1:02d} / {n:02d}
+          </div>
+          <div style="color:{IVORY};line-height:1.5;font-size:16px;">{options[idx]}</div>
         </div>
+        <style>@keyframes fadein {{ from {{opacity:0; transform: translateY(6px);}} to {{opacity:1; transform:none;}} }}</style>
+        """, unsafe_allow_html=True)
 
-        <script>
-        (function(){{
-          const hiddenText = "{sentinel_label}";
-          const anchorId   = "{anchor_id}";
-          const n          = {n};
-          const rotateMs   = 3200; // same as CSS transition time
-          let spinning = false;
-
-          const w = document.getElementById('wheel_svg');
-          if (w) {{
-            w.style.transition = 'transform 3.2s cubic-bezier(.17,.67,.32,1.35)';
-            // apply server-known angle immediately for visual continuity
-            requestAnimationFrame(() => {{ w.style.transform = 'rotate({angle}deg)'; }});
-          }}
-
-          // Hide the sentinel button within the local block only (no global scans)
-          try {{
-            const scope = window.parent.document;
-            const anchor = scope.getElementById(anchorId);
-            const block  = anchor ? anchor.closest('div[data-testid="stVerticalBlock"]') : scope;
-            const btn = Array.from(block.querySelectorAll('button'))
-              .find(b => (b.innerText||'').trim() === hiddenText);
-            if (btn) btn.style.display = 'none';
-          }} catch(e) {{ /* ignore */ }}
-
-          function clickSentinelWith(index) {{
-            try {{
-              const scope  = window.parent.document;
-              const anchor = scope.getElementById(anchorId);
-              const block  = anchor ? anchor.closest('div[data-testid="stVerticalBlock"]') : scope;
-
-              // write spin index & nonce to query params to make state explicit
-              const url = new URL(window.parent.location.href);
-              url.searchParams.set('spin', String(index));
-              url.searchParams.set('spinNonce', String(Date.now()));
-              window.parent.history.replaceState({{}}, '', url.toString());
-
-              // now click the sentinel in this same block to trigger a rerun
-              const btn = Array.from(block.querySelectorAll('button'))
-                .find(b => (b.innerText||'').trim() === hiddenText);
-              btn && btn.click();
-            }} catch(e) {{}}
-          }}
-
-          document.getElementById('spin_overlay')?.addEventListener('click', () => {{
-            if (spinning || !w) return;
-            spinning = true;
-            // client-first: choose random result immediately
-            const idx = Math.floor(Math.random() * n);
-            const seg = 360 / n;
-            const spins = 4 + Math.floor(Math.random() * 3); // 4–6
-            const angle = spins*360 + (idx + 0.5)*seg;
-
-            // start animation immediately
-            requestAnimationFrame(() => {{ w.style.transform = `rotate(${angle}deg)`; }});
-
-            // after animation completes, notify Python via sentinel + query params
-            setTimeout(() => {{
-              clickSentinelWith(idx);
-              spinning = false;
-            }}, rotateMs + 50);
-          }});
-        }})();
-        </script>
-        """
-        st.components.v1.html(comp_html, height=WHEEL_SIZE + 40)
-
-        # Pretty result card (renders only if a result exists; no heavy effects)
-        if ss.get("selected_index") is not None:
-            idx = ss["selected_index"]
-            st.markdown(f"""
-            <div style="
-              max-width:900px;margin:18px auto 0;padding:18px 20px;border-radius:14px;
-              background:rgba(16,24,32,.55);border:1px solid rgba(208,168,92,.45);
-              box-shadow:0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
-              animation:fadein .35s ease-out;">
-              <div style="font-size:13px;letter-spacing:.4px;color:{GOLD};text-transform:uppercase;opacity:.9;margin-bottom:6px;">
-                Result {idx+1:02d} / {n:02d}
-              </div>
-              <div style="color:{IVORY};line-height:1.5;font-size:16px;">{options[idx]}</div>
-            </div>
-            <style>@keyframes fadein {{ from {{opacity:0; transform: translateY(6px);}} to {{opacity:1; transform:none;}} }}</style>
-            """, unsafe_allow_html=True)
-
-# Run the (partial) wheel region
-wheel_fragment()
+# Build Wheel tab containers/inputs outside, then mount the fragment INSIDE the tab
+with tab3:
+    st.markdown("### Wheel of Fortune")
+    heat_state = "High" if ss.notoriety >= 10 else "Low"
+    table_path = "assets/complications_high.json" if heat_state=="High" else "assets/complications_low.json"
+    options    = load_json(table_path)
+    wheel_fragment(options, heat_state, ward_focus, wheel_size=600)

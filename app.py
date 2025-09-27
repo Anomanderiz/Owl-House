@@ -334,6 +334,7 @@ with st.sidebar:
 # UI Components for Renown/Notoriety
 # ------------------------------------------------------------
 def render_renown_block(value: int):
+    # The curly braces for the JavaScript arrow function are doubled to escape them in the f-string.
     html = f"""
     <div id="renown_card" class="score-wrap" title="Click to view tiers">
       <img src="data:image/png;base64,{RENOWN_IMG_B64}" alt="Renown">
@@ -352,14 +353,15 @@ def render_renown_block(value: int):
       </table>
     </div>
     <script>
-      document.getElementById('renown_card')?.addEventListener('click',()=>{
+      document.getElementById('renown_card')?.addEventListener('click',()=>{{
         document.getElementById('renown_tiers')?.classList.toggle('open');
-      });
+      }});
     </script>
     """
     st.components.v1.html(html, height=480)
 
 def render_notoriety_block(value: int):
+    # The curly braces for the JavaScript arrow function are doubled here as well.
     html = f"""
     <div id="notoriety_card" class="score-wrap" title="Click to view tiers">
       <img src="data:image/png;base64,{NOTORIETY_IMG_B64}" alt="Notoriety">
@@ -378,9 +380,9 @@ def render_notoriety_block(value: int):
       </table>
     </div>
     <script>
-      document.getElementById('notoriety_card')?.addEventListener('click',()=>{
+      document.getElementById('notoriety_card')?.addEventListener('click',()=>{{
         document.getElementById('notoriety_tiers')?.classList.toggle('open');
-      });
+      }});
     </script>
     """
     st.components.v1.html(html, height=480)

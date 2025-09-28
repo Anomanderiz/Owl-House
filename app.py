@@ -398,7 +398,7 @@ sidebar = ui.sidebar(
 )
 
 # Tabs
-tab_mission = ui.nav(
+tab_mission = ui.nav_panel(
     "🗺️ Mission Generator",
     ui.input_radio_buttons("arc", "Archetype", ["Help the Poor","Sabotage Evil","Expose Corruption"], inline=True),
     ui.layout_columns(
@@ -418,7 +418,7 @@ tab_mission = ui.nav(
     ui.input_action_button("queue", "Queue Mission → Resolve & Log", class_="btn btn-primary"),
 )
 
-tab_resolve = ui.nav(
+tab_resolve = ui.nav_panel(
     "🎯 Resolve & Log",
     ui.output_ui("queued_json"),
     ui.input_text("notes","Notes (optional)"),
@@ -429,14 +429,14 @@ tab_resolve = ui.nav(
     ui.output_text("append_status"),
 )
 
-tab_wheel = ui.nav(
+tab_wheel = ui.nav_panel(
     "☸️ Wheel of Fortune",
     ui.output_text("heat_caption"),
     ui.output_ui("wheel_ui"),
     ui.output_ui("wheel_result"),
 )
 
-tab_ledger = ui.nav(
+tab_ledger = ui.nav_panel(
     "📜 Ledger",
     ui.input_action_button("reload", "Refresh from Google Sheets", class_="btn btn-secondary"),
     ui.output_text("reload_status"),

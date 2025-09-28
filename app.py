@@ -661,7 +661,7 @@ ui.head_content(ui.tags.script("""
     if(real) ro.observe(real);
   });
 })();
-""")))
+"""))
 
 
 

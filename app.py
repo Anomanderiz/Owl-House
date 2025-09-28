@@ -562,9 +562,8 @@ aside.sidebar .card {{ background: transparent; }}
 .tt-badge {{ font-weight: 800; }}
 .tt-gold {{ color: var(--gold); }}      /* Renown labels */
 .tt-red  {{ color: var(--heat-red); }}  /* Notoriety labels */
-
-.ward-card{display:flex;flex-direction:column;gap:10px}
-.ward-preview img{display:block;width:100%;height:auto}
+.ward-card{{display:flex;flex-direction:column;gap:10px}}
+.ward-preview img{{display:block;width:100%;height:auto}}
 </style>
 """
 

@@ -641,6 +641,7 @@ tab_mission = ui.nav_panel(
         ui.input_checkbox("nat20","Natural 20", False),
         ui.input_checkbox("nat1","Critical botch", False),
     ),
+    )
 
 tab_resolve = ui.nav_panel(
     "🎯 Resolve & Log",

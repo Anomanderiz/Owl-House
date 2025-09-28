@@ -719,6 +719,20 @@ def server(input, output, session):
         # map 0..30 to -3..+3 in 5-pt steps; clamp
         return max(-3, min(3, int(round((roll - 15) / 5))))
 
+    # Minor Ops quality aggregator: +1/-1 from the toggles by archetype
+    def oqm_from_inputs(arc: str, input) -> int:
+        ops = 0
+        if arc == "Help the Poor":
+            # sidebar: renamed label → id is still plan_help
+            ops += 1 if input.plan_help() else 0
+        elif arc == "Sabotage Evil":
+            ops += 1 if input.plan_sab() else 0
+            ops -= 1 if input.rushed() else 0
+        elif arc == "Expose Corruption":
+            ops += 1 if input.proof() else 0
+            ops -= 1 if input.reused() else 0
+        return ops
+
 
     def _arc_params():
         arc  = input.arc()

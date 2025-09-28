@@ -123,12 +123,56 @@ def load_ledger_from_sheet() -> Tuple[pd.DataFrame, Optional[str]]:
         df = pd.DataFrame(values[1:], columns=values[0])
         for col in ["BI","EB","OQM","renown_gain","notoriety_gain"]:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(float)
         return df, None
     except Exception as e:
         return pd.DataFrame(columns=COLUMNS), str(e)
 
 # ------------------------------ Mechanics ------------------------------
+
+# ---------- Points thresholds ----------
+RENOWN_THRESH = [5, 10, 15, 20, 25, 30]
+NOTORIETY_THRESH = [5, 10, 15, 20, 25, 30]
+
+def current_tier(total: float, thresholds: list[int]) -> int:
+    t = 0
+    for th in thresholds:
+        if total >= th: t += 1
+        else: break
+    return t
+
+def points_to_next(total: float, thresholds: list[int]) -> tuple[float, int|None]:
+    for i, th in enumerate(thresholds, start=1):
+        if total < th:
+            return round(th - total, 2), i
+    return 0.0, None
+
+def mission_count(df: pd.DataFrame) -> int:
+    if df.empty or "archetype" not in df.columns: return 0
+    mask = df["archetype"].isin(["Help the Poor","Sabotage Evil","Expose Corruption"])
+    return int(mask.sum())
+
+# ---------- Points award functions ----------
+RENOWN_ARC_MULT = {"Help the Poor":1.00, "Sabotage Evil":1.15, "Expose Corruption":1.30}
+RISK_ARC_MULT   = {"Help the Poor":0.80, "Sabotage Evil":1.10, "Expose Corruption":1.30}
+
+def renown_points_from(gold: float, M: int, arc: str, nat20: bool=False, nat1: bool=False) -> float:
+    base = 2.0 * math.log1p(max(0.0, gold) / (50.0 + 10.0*max(0, M)))
+    pts  = RENOWN_ARC_MULT.get(arc, 1.0) * base
+    pts += 0.5 if nat20 else 0.0
+    pts -= 0.3 if nat1  else 0.0
+    return round(max(0.0, pts), 2)
+
+def notoriety_points_from(gold: float, M: int, arc: str, current_notor_total: float,
+                          nat20: bool=False, nat1: bool=False) -> float:
+    base = 1.6 * math.log1p(max(0.0, gold) / (80.0 + 12.0*max(0, M)))
+    tier = current_tier(current_notor_total, NOTORIETY_THRESH)
+    heat_scale = 1.0 + 0.08 * tier
+    pts = RISK_ARC_MULT.get(arc, 1.0) * heat_scale * base
+    pts -= 0.3 if nat20 else 0.0
+    pts += 0.5 if nat1  else 0.0
+    return round(max(0.0, pts), 2)
+
 
 def clamp(v, lo, hi): return max(lo, min(hi, v))
 def heat_multiplier(n): return 1.5 if n>=20 else (1.25 if n>=10 else 1.0)
@@ -209,8 +253,8 @@ def _bootstrap_from_sheets():
         return
     if not df.empty:
         ledger_df.set(df)
-        r = int(pd.to_numeric(df.get("renown_gain", pd.Series()), errors="coerce").fillna(0).sum())
-        n = int(pd.to_numeric(df.get("notoriety_gain", pd.Series()), errors="coerce").fillna(0).sum())
+        r = float(pd.to_numeric(df.get("renown_gain", pd.Series()), errors="coerce").fillna(0).sum())
+        n = float(pd.to_numeric(df.get("notoriety_gain", pd.Series()), errors="coerce").fillna(0).sum())
         renown.set(r); notoriety.set(n)
 
 _bootstrap_from_sheets()
@@ -569,20 +613,24 @@ def server(input, output, session):
     @output
     @render.ui
     def renown_badge():
-        # wrapper must be position:relative so the ghost button can fill it
+        total = renown.get()
+        to_next, nxt = points_to_next(total, RENOWN_THRESH)
+        sub = f'{to_next:.1f} pts to R{nxt}' if nxt else 'Max tier'
         return ui.div(
             ui.HTML(f"""
               <div class="score-badge">
                 <img src="data:image/png;base64,{RENOWN_B64}" alt="Renown">
                 <div class="meta">
                   <div class="label">Renown</div>
-                  <div class="val">{renown.get()}</div>
+                  <div class="val">{total:.1f}</div>
+                  <div class="sub" style="font-size:12px;color:var(--gold);opacity:.95;">{sub}</div>
                 </div>
               </div>
             """),
             ui.input_action_button("renown_clicked", "", class_="ghost-btn"),
             style="position:relative; display:inline-block;"
         )
+
 
     @reactive.Effect
     @reactive.event(input.renown_clicked)
@@ -598,13 +646,17 @@ def server(input, output, session):
     @output
     @render.ui
     def notor_badge():
+        total = notoriety.get()
+        to_next, nxt = points_to_next(total, NOTORIETY_THRESH)
+        sub = f'{to_next:.1f} pts to N{nxt}' if nxt else 'Max tier'
         return ui.div(
             ui.HTML(f"""
               <div class="score-badge">
                 <img src="data:image/png;base64,{NOTOR_B64}" alt="Notoriety">
                 <div class="meta">
                   <div class="label">Notoriety</div>
-                  <div class="val">{notoriety.get()}</div>
+                  <div class="val">{total:.1f}</div>
+                  <div class="sub" style="font-size:12px;color:var(--heat-red);opacity:.95;">{sub}</div>
                 </div>
               </div>
             """),
@@ -649,83 +701,38 @@ def server(input, output, session):
     @output
     @render.text
     def base_summary():
-        # Gather inputs per arc
-        arc = _arc_state()
-        OQM = []
-        if arc=="Help the Poor":
-            BI = compute_BI(arc, {"spend": input.spend(), "households": input.households()})
-            if input.plan_help(): OQM.append(+1)
-        elif arc=="Sabotage Evil":
-            BI = compute_BI(arc, {"impact_level": input.impact()})
-            if input.plan_sab(): OQM.append(+1)
-            if input.rushed():   OQM.append(-1)
-        else:
-            BI = compute_BI(arc, {"expose_level": input.expose()})
-            if input.proof():  OQM.append(+1)
-            if input.reused(): OQM.append(-1)
-
-        EB = 3 if input.nat20() else (2 if input.margin()>=5 else (1 if input.margin()>=1 else 0))
-        base_score = compute_base_score(BI, EB, OQM)
-        return f"Base Impact: {BI} • EB: {EB} • OQM sum: {sum(OQM)} → Base Score: {base_score}"
+        arc = input.arc()
+        gold = float(input.spend() if hasattr(input, "spend") else 0)
+        M = mission_count(ledger_df.get())
+        rp = renown_points_from(gold, M, arc, nat20=input.nat20(), nat1=input.nat1())
+        np = notoriety_points_from(gold, M, arc, notoriety.get(), nat20=input.nat20(), nat1=input.nat1())
+        return f"Projected Renown Points: {rp:.2f} • Projected Notoriety Points: {np:.2f} (Gold {gold:.0f}, Missions {M})"
 
     @output
     @render.text
     def proj_summary():
-        arc = _arc_state()
-        if arc == "Help the Poor":
-            BI = compute_BI(arc, {"spend": input.spend(), "households": input.households()})
-            OQM = [1] if input.plan_help() else []
-        elif arc == "Sabotage Evil":
-            BI = compute_BI(arc, {"impact_level": input.impact()})
-            OQM = ([1] if input.plan_sab() else []) + ([-1] if input.rushed() else [])
-        else:
-            BI = compute_BI(arc, {"expose_level": input.expose()})
-            OQM = ([1] if input.proof() else []) + ([-1] if input.reused() else [])
-
-        EB = 3 if input.nat20() else (2 if input.margin() >= 5 else (1 if input.margin() >= 1 else 0))
-        base_score = compute_base_score(BI, EB, OQM)
-
-        # Fixed EI defaults (simple, mirrors original intent)
-        vis=noise=1; sig=0; wit=1; mag=0; conc=2; mis=1
-        EI = (vis+noise+sig+wit+mag) - (conc+mis)
-
-        ren_gain = renown_from_score(base_score, arc)
-        cat_base = {"Help the Poor":1, "Sabotage Evil":2, "Expose Corruption":3}[arc]
-        heat = max(0, math.ceil((cat_base + max(0, EI-1) + (1 if input.nat1() else 0)) * heat_multiplier(notoriety.get())))
-        if input.nat20():
-            heat = max(0, heat-1)
-
-        return f"Projected Renown: {ren_gain} • Projected Notoriety: {heat} • EI: {EI}"
+        # Same content as base_summary, or drop entirely if redundant
+        return base_summary()
 
     # Queue mission
     @reactive.Effect
     @reactive.event(input.queue)
     def _queue():
         arc = input.arc()
-        if arc=="Help the Poor":
-            BI = compute_BI(arc, {"spend": input.spend(), "households": input.households()})
-            OQM = [1] if input.plan_help() else []
-        elif arc=="Sabotage Evil":
-            BI = compute_BI(arc, {"impact_level": input.impact()})
-            OQM = ([1] if input.plan_sab() else []) + ([-1] if input.rushed() else [])
-        else:
-            BI = compute_BI(arc, {"expose_level": input.expose()})
-            OQM = ([1] if input.proof() else []) + ([-1] if input.reused() else [])
+        gold = float(input.spend() if arc=="Help the Poor" else (input.spend() if hasattr(input, "spend") else 0))
+        # If you sometimes fund Sabotage/Expose with gold too, leave spend in place; otherwise keep gold as entered.
 
-        EB = 3 if input.nat20() else (2 if input.margin()>=5 else (1 if input.margin()>=1 else 0))
-        base_score = compute_base_score(BI, EB, OQM)
-        ren_gain = renown_from_score(base_score, arc)
+        df_now = ledger_df.get()
+        M = mission_count(df_now)
 
-        # Simplified EI controls (mirror of original defaults)
-        vis=noise=1; sig=0; wit=1; mag=0; conc=2; mis=1
-        cat_base = {"Help the Poor":1,"Sabotage Evil":2,"Expose Corruption":3}[arc]
-        heat = max(0, math.ceil((cat_base + max(0,(vis+noise+sig+wit+mag)-(conc+mis)-1) + (1 if input.nat1() else 0)) * heat_multiplier(notoriety.get())))
-        if input.nat20(): heat = max(0, heat-1)
+        rp = renown_points_from(gold, M, arc, nat20=input.nat20(), nat1=input.nat1())
+        np = notoriety_points_from(gold, M, arc, notoriety.get(), nat20=input.nat20(), nat1=input.nat1())
 
         queued_mission.set(dict(
-            ward=ward_focus.get(), archetype=arc, BI=BI, EB=EB, OQM=sum(OQM),
-            renown_gain=ren_gain, notoriety_gain=heat,
-            EI_breakdown=dict(visibility=vis, noise=noise, signature=sig, witnesses=wit, magic=mag, concealment=conc, misdirection=mis)
+            ward=ward_focus.get(), archetype=arc,
+            BI="-", EB="-", OQM="-",          # legacy fields no longer used to compute points
+            renown_gain=rp, notoriety_gain=np,
+            EI_breakdown={"gold": gold, "missions_so_far": M}
         ))
 
     @output
@@ -743,28 +750,25 @@ def server(input, output, session):
     def _apply():
         q = queued_mission.get()
         if not q: return
-        renown.set(renown.get() + q["renown_gain"])
-        notoriety.set(notoriety.get() + q["notoriety_gain"])
+
+        renown.set(renown.get() + float(q["renown_gain"]))
+        notoriety.set(notoriety.get() + float(q["notoriety_gain"]))
 
         row = [
-            dt.datetime.now().isoformat(timespec="seconds"), q["ward"], q["archetype"],
-            q["BI"], q["EB"], q["OQM"], q["renown_gain"], q["notoriety_gain"],
+            dt.datetime.now().isoformat(timespec="seconds"),
+            q["ward"], q["archetype"],
+            q["BI"], q["EB"], q["OQM"],
+            q["renown_gain"], q["notoriety_gain"],
             json.dumps(q["EI_breakdown"]), input.notes() or "", ""
         ]
         df = ledger_df.get().copy()
         df.loc[len(df)] = row
         ledger_df.set(df)
 
-        ok, err = append_rows_to_sheet([row])
-        if ok:
-            # pull back remote copy so totals reflect any outside edits
-            remote, _ = load_ledger_from_sheet()
-            if not remote.empty:
-                ledger_df.set(remote)
-                r = int(pd.to_numeric(remote.get("renown_gain", pd.Series()), errors="coerce").fillna(0).sum())
-                n = int(pd.to_numeric(remote.get("notoriety_gain", pd.Series()), errors="coerce").fillna(0).sum())
-                renown.set(r); notoriety.set(n)
+        ok, _err = append_rows_to_sheet([row])
+        # Optional: reload and recompute floats if you want source-of-truth from Sheets.
         queued_mission.set(None)
+
 
     # Append all
     @output

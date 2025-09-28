@@ -249,54 +249,66 @@ GLOBAL_CSS = f"""
 <style>
 @import url("https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English+SC&display=swap");
 
-/* ---------- Accent palette derived earlier ---------- */
 :root {{
   --accent: {ACCENT};
   --accent-light: {ACCENT_LIGHT};
   --accent-dark: {ACCENT_DARK};
   --ivory: {IVORY};
   --gold: {GOLD};
-
-  /* Override Bootstrap body colours so components inherit dark scheme */
+  --heat-red: #e24a3c;       /* scarlet for Notoriety */
+  --midnight: #0b1424;       /* deep theme blue behind the mural */
   --bs-body-bg: transparent;
   --bs-body-color: var(--ivory);
   --bs-border-color: rgba(255,255,255,0.12);
 }}
 
 html, body {{
-  height: 100%;
+  min-height: 100%;
   color: var(--ivory);
-  background: url('data:image/png;base64,{BG_B64}') no-repeat center center fixed;
+  background-color: var(--midnight); /* solid canvas behind the image */
+  background-image: url('data:image/png;base64,{BG_B64}');
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-attachment: fixed;
   background-size: cover;
 }}
 
 h1, h2, h3, h4, label, .form-label {{ color: var(--ivory); }}
-a, .tt-badge {{ color: var(--accent-light); }}
+/* Title: punch up legibility everywhere */
+#app-root h2 {{
+  color: var(--ivory) !important;
+  text-shadow: 0 4px 14px rgba(0,0,0,.85), 0 0 2px rgba(0,0,0,.95);
+  letter-spacing: .2px;
+}}
+
+a {{ color: var(--accent-light); }}
 
 /* ---------- App shell ---------- */
 #app-root {{
   background: linear-gradient(180deg, rgba(0,0,0,0.36), rgba(0,0,0,0.64));
   backdrop-filter: blur(14px) saturate(1.15);
   -webkit-backdrop-filter: blur(14px) saturate(1.15);
-  border: 1px solid var(--accent-light);
+  border: 1px solid var(--gold);
   border-radius: 24px;
   box-shadow: 0 20px 50px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06);
   padding: 1.0rem 1.2rem;
   margin-top: .6rem;
 }}
 
-.goldrim {{
-  border: 1px solid var(--accent-light) !important;
-  border-radius: 14px !important;
-  box-shadow: 0 10px 24px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.06) !important;
-  background: rgba(10,14,28,0.72);
+.goldrim,
+.card,
+.tiers,
+.result-card {{
+  background: rgba(10,14,28,0.74);
+  border: 1px solid var(--gold) !important;   /* ← gold outlines on all boxes */
+  border-radius: 14px;
   color: var(--ivory);
 }}
 
-/* ---------- Sidebar: give it a body ---------- */
+/* ---------- Sidebar ---------- */
 aside.sidebar {{
   background: linear-gradient(180deg, rgba(10,14,28,0.92), rgba(10,14,28,0.82));
-  border-right: 1px solid var(--accent-light);
+  border-right: 1px solid var(--gold);
   backdrop-filter: blur(10px) saturate(1.1);
   -webkit-backdrop-filter: blur(10px) saturate(1.1);
 }}
@@ -304,87 +316,85 @@ aside.sidebar .card {{ background: transparent; }}
 #sidebar-mural {{
   position: relative; height: 1120px; margin-top: 8px; z-index: 0;
   background: url('data:image/png;base64,{MURAL_B64}') no-repeat center top / contain;
-  opacity: 0.88; filter: drop-shadow(0 6px 12px rgba(0,0,0,.25));
+  opacity: 0.9; filter: drop-shadow(0 6px 12px rgba(0,0,0,.25));
   pointer-events: none;
 }}
-.welcome {{
-  border: 1px solid var(--accent-light);
-  border-radius: 18px;
-  padding: 1rem 1.1rem;
-  background: rgba(14,18,38,0.70);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04), 0 10px 30px rgba(0,0,0,0.35);
-}}
-.welcome h3 {{ font-family: "Cinzel Decorative", serif; margin: 0 0 .35rem 0; }}
 
-/* ---------- Cards, tabs, and table panes ---------- */
-.card {{
-  background: rgba(10,14,28,0.78);
-  border: 1px solid var(--accent-light);
+/* ---------- Tabs ---------- */
+.nav-tabs .nav-link {{
   color: var(--ivory);
+  background: rgba(10,14,28,0.45);
+  border: 1px solid var(--gold);
 }}
-.nav-tabs .nav-link {{ color: var(--accent-light); background: rgba(10,14,28,0.45); }}
-.nav-tabs .nav-link:hover {{ background: rgba(10,14,28,0.65); }}
 .nav-tabs .nav-link.active {{
   color: #fff;
   background-color: var(--accent-dark);
-  border-color: var(--accent-dark) var(--accent-dark) transparent;
+  border-color: var(--gold);
 }}
-.tab-content {{ background: transparent; }}
 
-/* ---------- Inputs: kill white boxes ---------- */
+/* ---------- Inputs: dark glass + gold borders ---------- */
 .form-control,
 .form-select,
-.selectize-input {{
+.selectize-input,
+.input-group-text {{
   color: var(--ivory);
   background: rgba(255,255,255,0.06);
-  border: 1px solid var(--accent-light);
+  border: 1px solid rgba(208,168,92,.65);      /* soft gold */
 }}
 .form-control:focus,
 .form-select:focus,
 .selectize-input.focus {{
   color: var(--ivory);
   background: rgba(255,255,255,0.10);
-  border-color: var(--accent);
-  box-shadow: 0 0 0 .2rem rgba(208,168,92,.25);
+  border-color: var(--gold);
+  box-shadow: 0 0 0 .2rem rgba(208,168,92,.35);
 }}
-.input-group-text {{ color: var(--ivory); background: rgba(255,255,255,0.06); border-color: var(--accent-light); }}
 .form-check-label {{ color: var(--ivory); }}
-.form-check-input {{
-  background-color: rgba(255,255,255,0.1);
-  border-color: var(--accent-light);
-}}
-.form-check-input:checked {{ background-color: var(--accent); border-color: var(--accent); }}
+.form-check-input {{ background-color: rgba(255,255,255,0.1); border-color: rgba(208,168,92,.65); }}
+.form-check-input:checked {{ background-color: var(--gold); border-color: var(--gold); }}
 
 /* Sliders */
-.form-range::-webkit-slider-thumb {{ background: var(--accent); }}
+.form-range::-webkit-slider-thumb {{ background: var(--gold); }}
 .form-range::-webkit-slider-runnable-track {{ background: rgba(255,255,255,0.18); }}
-.form-range::-moz-range-thumb {{ background: var(--accent); }}
+.form-range::-moz-range-thumb {{ background: var(--gold); }}
 .form-range::-moz-range-track {{ background: rgba(255,255,255,0.18); }}
 
-/* Buttons */
-.btn-primary {{ background-color: var(--accent); border-color: var(--accent-dark); }}
-.btn-secondary {{ background-color: var(--accent-dark); border-color: var(--accent); }}
+/* ---------- Buttons ---------- */
+.btn-primary {{ background-color: var(--accent); border-color: var(--gold); }}
+.btn-secondary {{ background-color: var(--accent-dark); border-color: var(--gold); }}
+
+/* Specific gold actions (IDs come from input_action_button ids) */
+#lie_low, #proxy_charity {{
+  background-color: var(--gold) !important;
+  border-color: var(--gold) !important;
+  color: #0d1323 !important;
+}}
+#lie_low:hover, #proxy_charity:hover,
+#lie_low:focus, #proxy_charity:focus {{
+  filter: brightness(1.05);
+  box-shadow: 0 0 0 .2rem rgba(208,168,92,.35);
+}}
 
 /* ---------- Crests ---------- */
-.score-badge {{
-  position: relative; display: inline-flex; align-items: center; gap: 14px;
-  padding: 6px 0; background: transparent; border: none; user-select: none;
-}}
-.score-badge img {{
-  width: 220px; height: 220px; object-fit: contain;
-  filter: drop-shadow(0 6px 12px rgba(0,0,0,.35));
-}}
-.score-badge .label {{ font-size: 15px; opacity: .9; letter-spacing: .4px; }}
+.score-badge {{ position: relative; display: inline-flex; align-items: center; gap: 14px; padding: 6px 0; }}
+.score-badge img {{ width: 220px; height: 220px; object-fit: contain; filter: drop-shadow(0 6px 12px rgba(0,0,0,.35)); }}
+.score-badge .label {{ font-size: 15px; opacity: .95; letter-spacing: .4px; }}
 .score-badge .val   {{ font-size: 58px; font-weight: 800; line-height: 1.05; text-shadow: 0 2px 6px rgba(0,0,0,.55); }}
-.ghost-btn {{ position:absolute; inset:0; background:transparent; border:none; padding:0; cursor:pointer; }}
+
+/* Invisible overlay button — never grey on hover */
+.ghost-btn, .ghost-btn:hover, .ghost-btn:active, .ghost-btn:focus {{
+  position:absolute; inset:0;
+  background: transparent !important;
+  border: none !important;
+  color: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+  cursor: pointer;
+}}
 
 /* ---------- Wheel ---------- */
 #wheel_wrap {{ position: relative; width: 600px; margin: 0 auto; }}
-#wheel_img {{
-  width: 100%; height: 100%; border-radius: 50%;
-  box-shadow: 0 10px 40px rgba(0,0,0,.55);
-  background: radial-gradient(closest-side, rgba(255,255,255,0.06), transparent);
-}}
+#wheel_img {{ width: 100%; height: 100%; border-radius: 50%; box-shadow: 0 10px 40px rgba(0,0,0,.55); background: radial-gradient(closest-side, rgba(255,255,255,0.06), transparent); }}
 #pointer {{
   position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
   width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent;
@@ -394,7 +404,7 @@ aside.sidebar .card {{ background: transparent; }}
   position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
   min-width: 120px; height: 120px; border-radius: 60px;
   display:grid; place-items:center; font-weight:700; letter-spacing:.5px; text-transform:uppercase;
-  border:1px solid var(--accent-light);
+  border:1px solid var(--gold);
   background:linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
   backdrop-filter: blur(8px) saturate(1.1); -webkit-backdrop-filter: blur(8px) saturate(1.1);
   box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
@@ -403,23 +413,16 @@ aside.sidebar .card {{ background: transparent; }}
 @keyframes wheelspin {{ from {{ transform: rotate(0deg); }} to {{ transform: rotate(var(--spin-deg, 1440deg)); }} }}
 #wheel_img.spinning {{ animation: wheelspin 3.2s cubic-bezier(.17,.67,.32,1.35); }}
 
-/* ---------- Result card ---------- */
-.result-card {{
-  max-width: 900px; margin: 18px auto 0; padding: 18px 20px;
-  border-radius: 14px;
-  background: rgba(16,24,32,0.55);
-  border: 1px solid var(--accent-light);
-  box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,0.06);
-  backdrop-filter: blur(6px) saturate(1.05); -webkit-backdrop-filter: blur(6px) saturate(1.05);
-  animation: fadein .35s ease-out;
-  color: var(--ivory);
-}}
-.result-number {{ font-size: 13px; letter-spacing: .4px; color: var(--gold); text-transform: uppercase; opacity: .9; margin-bottom: 6px; }}
-.result-text {{ line-height: 1.5; font-size: 16px; }}
-
-@keyframes fadein {{ from {{ opacity: 0; transform: translateY(6px); }} to {{ opacity: 1; transform: none; }} }}
+/* ---------- Tier tables ---------- */
+.tier-table {{ width: 100%; border-collapse: collapse; color: var(--ivory); }}
+.tier-table th, .tier-table td {{ border-top: 1px solid rgba(208,168,92,.35); padding: 8px 10px; vertical-align: top; }}
+.tier-table tr:first-child th, .tier-table tr:first-child td {{ border-top: none; }}
+.tt-badge {{ font-weight: 800; }}
+.tt-gold {{ color: var(--gold); }}      /* Renown labels */
+.tt-red  {{ color: var(--heat-red); }}  /* Notoriety labels */
 </style>
 """
+
 
 
 
@@ -440,12 +443,12 @@ RENOWN_TIERS_HTML = f"""
   <h4>Veil-Fame perks — subtle favours while the mask stays on</h4>
   <table class="tier-table">
     <tr><th>Tier</th><th>Threshold</th><th>Perks (quiet, deniable)</th></tr>
-    <tr><td class="tt-badge">R1</td><td>5</td><td><b>Street Signals</b>: advantage to glean rumours; hand-signs recognised across working wards.</td></tr>
-    <tr><td class="tt-badge">R2</td><td>10</td><td><b>Quiet Hands</b>: once/session arrange a safe hand-off (stash, message, disguise kit) nearby.</td></tr>
-    <tr><td class="tt-badge">R3</td><td>15</td><td><b>Crowd Cover</b>: once/long rest break line-of-sight; one round of full cover while slipping away.</td></tr>
-    <tr><td class="tt-badge">R4</td><td>20</td><td><b>Whisper Network</b>: one social check/scene at advantage vs townsfolk; one free d6 help/session for urban navigation or scrounge.</td></tr>
-    <tr><td class="tt-badge">R5</td><td>25</td><td><b>Safehouses</b>: two boltholes; short rests can’t be disturbed; once/adventure negate a post-job pursuit.</td></tr>
-    <tr><td class="tt-badge">R6</td><td>30</td><td><b>Folk Halo</b> (anonymous): −10% mundane gear; once/adventure the crowd “coincidentally” intervenes.</td></tr>
+    <tr><td class="tt-badge tt-gold">R1</td><td>5</td><td><b>Street Signals</b>: advantage to glean rumours; hand-signs recognised across working wards.</td></tr>
+    <tr><td class="tt-badge tt-gold">R2</td><td>10</td><td><b>Quiet Hands</b>: once/session arrange a safe hand-off (stash, message, disguise kit) nearby.</td></tr>
+    <tr><td class="tt-badge tt-gold">R3</td><td>15</td><td><b>Crowd Cover</b>: once/long rest break line-of-sight; one round of full cover while slipping away.</td></tr>
+    <tr><td class="tt-badge tt-gold">R4</td><td>20</td><td><b>Whisper Network</b>: one social check/scene at advantage vs townsfolk; one free d6 help/session for urban navigation or scrounge.</td></tr>
+    <tr><td class="tt-badge tt-gold">R5</td><td>25</td><td><b>Safehouses</b>: two boltholes; short rests can’t be disturbed; once/adventure negate a post-job pursuit.</td></tr>
+    <tr><td class="tt-badge tt-gold">R6</td><td>30</td><td><b>Folk Halo</b> (anonymous): −10% mundane gear; once/adventure the crowd “coincidentally” intervenes.</td></tr>
   </table>
 </div>
 """
@@ -455,12 +458,12 @@ NOTOR_TIERS_HTML = f"""
   <h4>City Heat — escalating responses without unmasking you</h4>
   <table class="tier-table">
     <tr><th>Band</th><th>Score</th><th>City response</th></tr>
-    <tr><td class="tt-badge">N0 — Cold</td><td>0–4</td><td>Nothing special.</td></tr>
-    <tr><td class="tt-badge">N1 — Warm</td><td>5–9</td><td><b>Ward sweeps</b>: DC checks after hot jobs; ignore at peril of +1 heat.</td></tr>
-    <tr><td class="tt-badge">N2 — Hot</td><td>10–14</td><td><b>Pattern watch</b>: repeat MOs +2 DC; kit spot-checks risk +1 heat.</td></tr>
-    <tr><td class="tt-badge">N3 — Scalding</td><td>15–19</td><td><b>Counter-ops</b>: rivals meddle; residue detectors; reused looks at disadvantage.</td></tr>
-    <tr><td class="tt-badge">N4 — Burning</td><td>20–24</td><td><b>Scry-sweeps</b>: casting risks Trace test; fail = +2 heat and a tail.</td></tr>
-    <tr><td class="tt-badge">N5 — Inferno</td><td>25–30</td><td><b>Citywide dragnet</b>: curfews; +2 DC to stealth/social; bounty posted.</td></tr>
+    <tr><td class="tt-badge tt-red">N0 — Cold</td><td>0–4</td><td>Nothing special.</td></tr>
+    <tr><td class="tt-badge tt-red">N1 — Warm</td><td>5–9</td><td><b>Ward sweeps</b>: DC checks after hot jobs; ignore at peril of +1 heat.</td></tr>
+    <tr><td class="tt-badge tt-red">N2 — Hot</td><td>10–14</td><td><b>Pattern watch</b>: repeat MOs +2 DC; kit spot-checks risk +1 heat.</td></tr>
+    <tr><td class="tt-badge tt-red">N3 — Scalding</td><td>15–19</td><td><b>Counter-ops</b>: rivals meddle; residue detectors; reused looks at disadvantage.</td></tr>
+    <tr><td class="tt-badge tt-red">N4 — Burning</td><td>20–24</td><td><b>Scry-sweeps</b>: casting risks Trace test; fail = +2 heat and a tail.</td></tr>
+    <tr><td class="tt-badge tt-red">N5 — Inferno</td><td>25–30</td><td><b>Citywide dragnet</b>: curfews; +2 DC to stealth/social; bounty posted.</td></tr>
   </table>
 </div>
 """

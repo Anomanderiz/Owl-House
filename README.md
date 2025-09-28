@@ -1,4 +1,4 @@
-# Night Owls — Waterdeep Secret Club Manager (Streamlit)
+# Night Owls — Waterdeep Secret Club Manager (Shiny)
 
 - Glass‑UI with your logos.
 - Renown & Notoriety trackers with exact rules you set.

@@ -705,8 +705,8 @@ def server(input, output, session):
         ward_focus.set(input.ward())
 
     def _eb_from_roll(roll: int, nat20: bool) -> int:
-    if nat20:
-        return 3
+        if nat20:
+            return 3
     # map 0..30 to -3..+3 in 5-pt steps; clamp
     return max(-3, min(3, int(round((roll - 15) / 5))))
 

@@ -336,10 +336,6 @@ def _bootstrap_from_sheets():
         return
     if not df.empty:
         ledger_df.set(df)
-        # in _reload()
-        r = float(pd.to_numeric(remote.get("renown_gain", pd.Series()), errors="coerce").fillna(0).sum())
-        n = float(pd.to_numeric(remote.get("notoriety_gain", pd.Series()), errors="coerce").fillna(0).sum())
-        renown.set(r); notoriety.set(n)
 
 
 _bootstrap_from_sheets()
@@ -996,9 +992,11 @@ def server(input, output, session):
             ui.notification_show(f"Reload failed: {err}", type="warning", duration=6)
         else:
             ledger_df.set(remote)
-            r = int(pd.to_numeric(remote.get("renown_gain", pd.Series()), errors="coerce").fillna(0).sum())
-            n = int(pd.to_numeric(remote.get("notoriety_gain", pd.Series()), errors="coerce").fillna(0).sum())
+            # in _reload()
+            r = float(pd.to_numeric(remote.get("renown_gain", pd.Series()), errors="coerce").fillna(0).sum())
+            n = float(pd.to_numeric(remote.get("notoriety_gain", pd.Series()), errors="coerce").fillna(0).sum())
             renown.set(r); notoriety.set(n)
+
             ui.notification_show("Ledger reloaded and counters recalculated.", type="message", duration=4)
 
     @output

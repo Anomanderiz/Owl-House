@@ -561,35 +561,28 @@ def server(input, output, session):
     @render.text
     def proj_summary():
         arc = _arc_state()
-        # recompute a minimal set consistently with base_summary
-        if arc=="Help the Poor":
+        if arc == "Help the Poor":
             BI = compute_BI(arc, {"spend": input.spend(), "households": input.households()})
             OQM = [1] if input.plan_help() else []
-        elif arc=="Sabotage Evil":
+        elif arc == "Sabotage Evil":
             BI = compute_BI(arc, {"impact_level": input.impact()})
             OQM = ([1] if input.plan_sab() else []) + ([-1] if input.rushed() else [])
         else:
             BI = compute_BI(arc, {"expose_level": input.expose()})
             OQM = ([1] if input.proof() else []) + ([-1] if input.reused() else [])
 
-        EB = 3 if input.nat20() else (2 if input.margin()>=5 else (1 if input.margin()>=1 else 0))
+        EB = 3 if input.nat20() else (2 if input.margin() >= 5 else (1 if input.margin() >= 1 else 0))
         base_score = compute_base_score(BI, EB, OQM)
 
-        vis=input.get("vis", 1) or 1  # not exposed here; keep projection consistent with original summary control set
-        noise=input.get("noise",1) or 1
-        sig=input.get("sig",  0) or 0
-        wit=input.get("wit",  1) or 1
-        mag=input.get("mag",  0) or 0
-        conc=input.get("conc",2) or 2
-        mis=input.get("mis",  1) or 1
-        EI = (vis+noise+sig+wit+mag)-(conc+mis)
+        # Fixed EI defaults (simple, mirrors original intent)
+        vis=noise=1; sig=0; wit=1; mag=0; conc=2; mis=1
+        EI = (vis+noise+sig+wit+mag) - (conc+mis)
 
         ren_gain = renown_from_score(base_score, arc)
-        cat_base = {"Help the Poor":1,"Sabotage Evil":2,"Expose Corruption":3}[arc]
-        nat1 = input.nat1()
-        n20 = input.nat20()
-        heat = max(0, math.ceil((cat_base + max(0,EI-1) + (1 if nat1 else 0)) * heat_multiplier(notoriety.get())))
-        if n20: heat = max(0, heat-1)
+        cat_base = {"Help the Poor":1, "Sabotage Evil":2, "Expose Corruption":3}[arc]
+        heat = max(0, math.ceil((cat_base + max(0, EI-1) + (1 if input.nat1() else 0)) * heat_multiplier(notoriety.get())))
+        if input.nat20():
+            heat = max(0, heat-1)
 
         return f"Projected Renown: {ren_gain} • Projected Notoriety: {heat} • EI: {EI}"
 

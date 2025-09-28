@@ -249,21 +249,33 @@ GLOBAL_CSS = f"""
 <style>
 @import url("https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English+SC&display=swap");
 
+/* ---------- Accent palette derived earlier ---------- */
 :root {{
   --accent: {ACCENT};
   --accent-light: {ACCENT_LIGHT};
   --accent-dark: {ACCENT_DARK};
   --ivory: {IVORY};
   --gold: {GOLD};
+
+  /* Override Bootstrap body colours so components inherit dark scheme */
+  --bs-body-bg: transparent;
+  --bs-body-color: var(--ivory);
+  --bs-border-color: rgba(255,255,255,0.12);
 }}
 
 html, body {{
   height: 100%;
+  color: var(--ivory);
   background: url('data:image/png;base64,{BG_B64}') no-repeat center center fixed;
   background-size: cover;
 }}
+
+h1, h2, h3, h4, label, .form-label {{ color: var(--ivory); }}
+a, .tt-badge {{ color: var(--accent-light); }}
+
+/* ---------- App shell ---------- */
 #app-root {{
-  background: linear-gradient(180deg, rgba(0,0,0,0.32), rgba(0,0,0,0.58)) ;
+  background: linear-gradient(180deg, rgba(0,0,0,0.36), rgba(0,0,0,0.64));
   backdrop-filter: blur(14px) saturate(1.15);
   -webkit-backdrop-filter: blur(14px) saturate(1.15);
   border: 1px solid var(--accent-light);
@@ -272,31 +284,29 @@ html, body {{
   padding: 1.0rem 1.2rem;
   margin-top: .6rem;
 }}
-h1, h2, h3, h4 {{ color: var(--ivory); text-shadow: 0 1px 0 rgba(0,0,0,0.35); }}
 
 .goldrim {{
   border: 1px solid var(--accent-light) !important;
   border-radius: 14px !important;
   box-shadow: 0 10px 24px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.06) !important;
-  background: rgba(10,14,28,0.60);
+  background: rgba(10,14,28,0.72);
+  color: var(--ivory);
 }}
 
-.nav-tabs .nav-link {{ color: var(--accent-light); }}
-.nav-tabs .nav-link.active {{
-  color: #fff;
-  background-color: var(--accent-dark);
-  border-color: var(--accent-dark) var(--accent-dark) transparent;
+/* ---------- Sidebar: give it a body ---------- */
+aside.sidebar {{
+  background: linear-gradient(180deg, rgba(10,14,28,0.92), rgba(10,14,28,0.82));
+  border-right: 1px solid var(--accent-light);
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
 }}
-.btn-primary {{
-  background-color: var(--accent);
-  border-color: var(--accent-dark);
+aside.sidebar .card {{ background: transparent; }}
+#sidebar-mural {{
+  position: relative; height: 1120px; margin-top: 8px; z-index: 0;
+  background: url('data:image/png;base64,{MURAL_B64}') no-repeat center top / contain;
+  opacity: 0.88; filter: drop-shadow(0 6px 12px rgba(0,0,0,.25));
+  pointer-events: none;
 }}
-.btn-secondary {{
-  background-color: var(--accent-dark);
-  border-color: var(--accent);
-}}
-a, .tt-badge {{ color: var(--accent-light); }}
-
 .welcome {{
   border: 1px solid var(--accent-light);
   border-radius: 18px;
@@ -304,9 +314,58 @@ a, .tt-badge {{ color: var(--accent-light); }}
   background: rgba(14,18,38,0.70);
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04), 0 10px 30px rgba(0,0,0,0.35);
 }}
-.welcome h3 {{ font-family: "Cinzel Decorative", serif; color: var(--ivory); margin: 0 0 .35rem 0; }}
-.welcome p {{ font-family: "IM Fell English SC", serif; font-size: 1.05rem; line-height: 1.3; color: var(--ivory); opacity: .92; }}
+.welcome h3 {{ font-family: "Cinzel Decorative", serif; margin: 0 0 .35rem 0; }}
 
+/* ---------- Cards, tabs, and table panes ---------- */
+.card {{
+  background: rgba(10,14,28,0.78);
+  border: 1px solid var(--accent-light);
+  color: var(--ivory);
+}}
+.nav-tabs .nav-link {{ color: var(--accent-light); background: rgba(10,14,28,0.45); }}
+.nav-tabs .nav-link:hover {{ background: rgba(10,14,28,0.65); }}
+.nav-tabs .nav-link.active {{
+  color: #fff;
+  background-color: var(--accent-dark);
+  border-color: var(--accent-dark) var(--accent-dark) transparent;
+}}
+.tab-content {{ background: transparent; }}
+
+/* ---------- Inputs: kill white boxes ---------- */
+.form-control,
+.form-select,
+.selectize-input {{
+  color: var(--ivory);
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--accent-light);
+}}
+.form-control:focus,
+.form-select:focus,
+.selectize-input.focus {{
+  color: var(--ivory);
+  background: rgba(255,255,255,0.10);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 .2rem rgba(208,168,92,.25);
+}}
+.input-group-text {{ color: var(--ivory); background: rgba(255,255,255,0.06); border-color: var(--accent-light); }}
+.form-check-label {{ color: var(--ivory); }}
+.form-check-input {{
+  background-color: rgba(255,255,255,0.1);
+  border-color: var(--accent-light);
+}}
+.form-check-input:checked {{ background-color: var(--accent); border-color: var(--accent); }}
+
+/* Sliders */
+.form-range::-webkit-slider-thumb {{ background: var(--accent); }}
+.form-range::-webkit-slider-runnable-track {{ background: rgba(255,255,255,0.18); }}
+.form-range::-moz-range-thumb {{ background: var(--accent); }}
+.form-range::-moz-range-track {{ background: rgba(255,255,255,0.18); }}
+
+/* Buttons */
+.btn-primary {{ background-color: var(--accent); border-color: var(--accent-dark); }}
+.btn-secondary {{ background-color: var(--accent-dark); border-color: var(--accent); }}
+
+/* ---------- Crests ---------- */
 .score-badge {{
   position: relative; display: inline-flex; align-items: center; gap: 14px;
   padding: 6px 0; background: transparent; border: none; user-select: none;
@@ -315,23 +374,11 @@ a, .tt-badge {{ color: var(--accent-light); }}
   width: 220px; height: 220px; object-fit: contain;
   filter: drop-shadow(0 6px 12px rgba(0,0,0,.35));
 }}
-.score-badge .label {{ font-size: 15px; color: var(--ivory); opacity: .9; letter-spacing: .4px; }}
-.score-badge .val   {{ font-size: 58px; color: var(--ivory); font-weight: 800; line-height: 1.05; text-shadow: 0 2px 6px rgba(0,0,0,.55); }}
+.score-badge .label {{ font-size: 15px; opacity: .9; letter-spacing: .4px; }}
+.score-badge .val   {{ font-size: 58px; font-weight: 800; line-height: 1.05; text-shadow: 0 2px 6px rgba(0,0,0,.55); }}
+.ghost-btn {{ position:absolute; inset:0; background:transparent; border:none; padding:0; cursor:pointer; }}
 
-.ghost-btn {{
-  position:absolute; inset:0; background:transparent; border:none; padding:0; cursor:pointer;
-}}
-
-.tiers {{
-  margin-top: 10px; padding: 14px 16px; border-radius: 16px;
-  background: rgba(16,24,32,.55); border: 1px solid var(--accent-light);
-  box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
-  color: var(--ivory);
-}}
-.tier-table {{ width: 100%; border-collapse: collapse; color: var(--ivory); }}
-.tier-table th, .tier-table td {{ border-top: 1px solid rgba(208,168,92,.25); padding: 8px 10px; vertical-align: top; }}
-.tier-table tr:first-child th, .tier-table tr:first-child td {{ border-top: none; }}
-
+/* ---------- Wheel ---------- */
 #wheel_wrap {{ position: relative; width: 600px; margin: 0 auto; }}
 #wheel_img {{
   width: 100%; height: 100%; border-radius: 50%;
@@ -343,7 +390,6 @@ a, .tt-badge {{ color: var(--accent-light); }}
   width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent;
   border-bottom: 26px solid var(--gold); filter: drop-shadow(0 2px 2px rgba(0,0,0,.4));
 }}
-
 .spin-btn {{
   position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
   min-width: 120px; height: 120px; border-radius: 60px;
@@ -354,7 +400,10 @@ a, .tt-badge {{ color: var(--accent-light); }}
   box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
   color: var(--ivory);
 }}
+@keyframes wheelspin {{ from {{ transform: rotate(0deg); }} to {{ transform: rotate(var(--spin-deg, 1440deg)); }} }}
+#wheel_img.spinning {{ animation: wheelspin 3.2s cubic-bezier(.17,.67,.32,1.35); }}
 
+/* ---------- Result card ---------- */
 .result-card {{
   max-width: 900px; margin: 18px auto 0; padding: 18px 20px;
   border-radius: 14px;
@@ -367,19 +416,11 @@ a, .tt-badge {{ color: var(--accent-light); }}
 }}
 .result-number {{ font-size: 13px; letter-spacing: .4px; color: var(--gold); text-transform: uppercase; opacity: .9; margin-bottom: 6px; }}
 .result-text {{ line-height: 1.5; font-size: 16px; }}
+
 @keyframes fadein {{ from {{ opacity: 0; transform: translateY(6px); }} to {{ opacity: 1; transform: none; }} }}
-
-@keyframes wheelspin {{ from {{ transform: rotate(0deg); }} to {{ transform: rotate(var(--spin-deg, 1440deg)); }} }}
-#wheel_img.spinning {{ animation: wheelspin 3.2s cubic-bezier(.17,.67,.32,1.35); }}
-
-#sidebar-mural {{
-  position: relative; height: 1120px; margin-top: 8px; z-index: 0;
-  background: url('data:image/png;base64,{MURAL_B64}') no-repeat center top / contain;
-  opacity: 0.8; filter: drop-shadow(0 6px 12px rgba(0,0,0,.25));
-  pointer-events: none;
-}}
 </style>
 """
+
 
 
 def crest_html(label: str, value: int, b64: str, dom_id: str) -> ui.HTML:

@@ -153,22 +153,91 @@ def mission_count(df: pd.DataFrame) -> int:
     return int(mask.sum())
 
 # ---------- Points award functions ----------
+# ---------- Tier thresholds ----------
+RENOWN_THRESH = [5, 10, 15, 20, 25, 30]
+NOTORIETY_THRESH = [5, 10, 15, 20, 25, 30]
+
+def current_tier(total: float, thresholds: list[int]) -> int:
+    t = 0
+    for th in thresholds:
+        if total >= th: t += 1
+        else: break
+    return t
+
+def points_to_next(total: float, thresholds: list[int]) -> tuple[float, int|None]:
+    for i, th in enumerate(thresholds, start=1):
+        if total < th:
+            return round(th - total, 2), i
+    return 0.0, None
+
+def mission_count(df: pd.DataFrame) -> int:
+    if df.empty or "archetype" not in df.columns: return 0
+    mask = df["archetype"].isin(["Help the Poor","Sabotage Evil","Expose Corruption"])
+    return int(mask.sum())
+
+# ---------- Inputs → OQM / success bucket ----------
+def oqm_from_inputs(arc: str, input) -> int:
+    if arc == "Help the Poor":
+        return (1 if input.plan_help() else 0)
+    if arc == "Sabotage Evil":
+        return (1 if input.plan_sab() else 0) + (-1 if input.rushed() else 0)
+    # Expose
+    return (1 if input.proof() else 0) + (-1 if input.reused() else 0)
+
+def eb_bucket(margin: int, nat20: bool) -> int:
+    # Same feel as your old EB: 0,1,2,3 (nat20 forces the top bucket)
+    if nat20: return 3
+    if margin >= 5: return 2
+    if margin >= 1: return 1
+    return 0
+
+# ---------- Arc multipliers ----------
 RENOWN_ARC_MULT = {"Help the Poor":1.00, "Sabotage Evil":1.15, "Expose Corruption":1.30}
 RISK_ARC_MULT   = {"Help the Poor":0.80, "Sabotage Evil":1.10, "Expose Corruption":1.30}
 
-def renown_points_from(gold: float, M: int, arc: str, nat20: bool=False, nat1: bool=False) -> float:
-    base = 2.0 * math.log1p(max(0.0, gold) / (50.0 + 10.0*max(0, M)))
-    pts  = RENOWN_ARC_MULT.get(arc, 1.0) * base
+# ---------- Main award functions (LOG curve + all modifiers) ----------
+def renown_points_from(*, gold: float, missions: int, arc: str,
+                       impact: int|None, exposure: int|None, oqm: int, eb: int,
+                       nat20: bool=False, nat1: bool=False) -> float:
+    # Gold has diminishing returns; later missions harden the curve.
+    base = 2.0 * math.log1p(max(0.0, gold) / (50.0 + 10.0*max(0, missions)))
+
+    # Behaviour mods
+    oqm_mult = 1.0 + 0.06 * oqm                         # good ops boost renown
+    eb_mult  = 1.0 + 0.05 * eb                          # tidy execution bumps renown
+
+    if arc == "Sabotage Evil":
+        eff_mult = 1.0 + 0.07 * ((impact or 3) - 3)     # impact 1..5 → ±0.14 swing
+    elif arc == "Expose Corruption":
+        eff_mult = 1.0 + 0.10 * ((exposure or 3) - 3)   # exposure leans stronger for fame
+    else:
+        eff_mult = 1.0
+
+    pts = RENOWN_ARC_MULT.get(arc, 1.0) * oqm_mult * eb_mult * eff_mult * base
     pts += 0.5 if nat20 else 0.0
     pts -= 0.3 if nat1  else 0.0
     return round(max(0.0, pts), 2)
 
-def notoriety_points_from(gold: float, M: int, arc: str, current_notor_total: float,
+def notoriety_points_from(*, gold: float, missions: int, arc: str,
+                          impact: int|None, exposure: int|None, oqm: int, eb: int,
+                          current_notor_total: float,
                           nat20: bool=False, nat1: bool=False) -> float:
-    base = 1.6 * math.log1p(max(0.0, gold) / (80.0 + 12.0*max(0, M)))
+    base = 1.6 * math.log1p(max(0.0, gold) / (80.0 + 12.0*max(0, missions)))
     tier = current_tier(current_notor_total, NOTORIETY_THRESH)
-    heat_scale = 1.0 + 0.08 * tier
-    pts = RISK_ARC_MULT.get(arc, 1.0) * heat_scale * base
+    heat_scale = 1.0 + 0.08 * tier                     # city learns patterns
+
+    # Ops quality: good ops damp heat, sloppy ops raise it
+    oqm_mult = max(0.70, 1.0 - 0.04 * oqm)
+    eb_mult  = max(0.80, 1.0 - 0.03 * eb)              # clean win → slightly less heat
+
+    if arc == "Sabotage Evil":
+        eff_mult = 1.0 + 0.09 * ((impact or 3) - 3)    # higher impact draws attention
+    elif arc == "Expose Corruption":
+        eff_mult = 1.0 + 0.12 * ((exposure or 3) - 3)  # exposure is spicy for heat
+    else:
+        eff_mult = 1.0
+
+    pts = RISK_ARC_MULT.get(arc, 1.0) * heat_scale * oqm_mult * eb_mult * eff_mult * base
     pts -= 0.3 if nat20 else 0.0
     pts += 0.5 if nat1  else 0.0
     return round(max(0.0, pts), 2)
@@ -230,11 +299,30 @@ def img_b64(img: Image.Image) -> str:
 
 # ---- helper: build the projected-points line (pure string) ----
 def projected_points_line(df: pd.DataFrame, arc: str, gold: float,
-                          nat20: bool, nat1: bool, notor_total: float) -> str:
+                          nat20: bool, nat1: bool, notor_total: float,
+                          impact: int|None, exposure: int|None, oqm: int, eb: int) -> str:
     M  = mission_count(df)
-    rp = renown_points_from(gold, M, arc, nat20=nat20, nat1=nat1)
-    np = notoriety_points_from(gold, M, arc, notor_total, nat20=nat20, nat1=nat1)
+    rp = renown_points_from(gold=gold, missions=M, arc=arc,
+                            impact=impact, exposure=exposure, oqm=oqm, eb=eb,
+                            nat20=nat20, nat1=nat1)
+    np = notoriety_points_from(gold=gold, missions=M, arc=arc,
+                               impact=impact, exposure=exposure, oqm=oqm, eb=eb,
+                               current_notor_total=notor_total, nat20=nat20, nat1=nat1)
     return f"Projected Renown Points: {rp:.2f} • Projected Notoriety Points: {np:.2f} (Gold {gold:.0f}, Missions {M})"
+
+def _arc_params():
+    arc  = input.arc()
+    gold = float(input.spend())
+    eb   = eb_bucket(int(input.margin()), input.nat20())
+    if arc == "Sabotage Evil":
+        impact, exposure = int(input.impact()), None
+    elif arc == "Expose Corruption":
+        impact, exposure = None, int(input.expose())
+    else:
+        impact, exposure = None, None
+    oqm = oqm_from_inputs(arc, input)
+    return arc, gold, eb, impact, exposure, oqm
+
 
 # ------------------------------ Reactive State ------------------------------
 
@@ -709,39 +797,32 @@ def server(input, output, session):
     @output
     @render.text
     def base_summary():
-        arc  = input.arc()
-        gold = float(input.spend() if hasattr(input, "spend") else 0.0)
-        return projected_points_line(ledger_df.get(), arc, gold, input.nat20(), input.nat1(), notoriety.get())
-
-    @output
-    @render.text
-    def proj_summary():
-        # If you keep this second line, compute it the same way (don’t call base_summary()).
-        arc  = input.arc()
-        gold = float(input.spend() if hasattr(input, "spend") else 0.0)
-        return projected_points_line(ledger_df.get(), arc, gold, input.nat20(), input.nat1(), notoriety.get())
+        arc, gold, eb, impact, exposure, oqm = _arc_params()
+        return projected_points_line(ledger_df.get(), arc, gold, input.nat20(), input.nat1(),
+                                     notoriety.get(), impact, exposure, oqm, eb)
 
 
     # Queue mission
     @reactive.Effect
     @reactive.event(input.queue)
     def _queue():
-        arc = input.arc()
-        gold = float(input.spend() if arc=="Help the Poor" else (input.spend() if hasattr(input, "spend") else 0))
-        # If you sometimes fund Sabotage/Expose with gold too, leave spend in place; otherwise keep gold as entered.
+        arc, gold, eb, impact, exposure, oqm = _arc_params()
+        M = mission_count(ledger_df.get())
 
-        df_now = ledger_df.get()
-        M = mission_count(df_now)
-
-        rp = renown_points_from(gold, M, arc, nat20=input.nat20(), nat1=input.nat1())
-        np = notoriety_points_from(gold, M, arc, notoriety.get(), nat20=input.nat20(), nat1=input.nat1())
+        rp = renown_points_from(gold=gold, missions=M, arc=arc,
+                                impact=impact, exposure=exposure, oqm=oqm, eb=eb,
+                                nat20=input.nat20(), nat1=input.nat1())
+        np = notoriety_points_from(gold=gold, missions=M, arc=arc,
+                                   impact=impact, exposure=exposure, oqm=oqm, eb=eb,
+                                   current_notor_total=notoriety.get(),
+                                   nat20=input.nat20(), nat1=input.nat1())
 
         queued_mission.set(dict(
-            ward=ward_focus.get(), archetype=arc,
-            BI="-", EB="-", OQM="-",          # legacy fields no longer used to compute points
+            ward=ward_focus.get(), archetype=arc, BI="-", EB=eb, OQM=oqm,
             renown_gain=rp, notoriety_gain=np,
-            EI_breakdown={"gold": gold, "missions_so_far": M}
+            EI_breakdown=dict(gold=gold, missions_so_far=M, impact=impact, exposure=exposure)
         ))
+
 
     @output
     @render.ui

@@ -534,37 +534,49 @@ aside.sidebar .card {{ background: transparent; }}
   cursor: pointer;
 }}
 
-/* --- KPI card layout --- */
-.kpi-card{{
-  display:flex; flex-direction:column; height:100%;
+/* ==== KPI cards: scale to fit, no scrollbars ==== */
+/* Make the CARD BODY the flex parent */
+.kpi-card .card-body{{
+  display:flex; flex-direction:column;
   gap:12px;
+  /* Let children shrink when tiers open */
+  min-height:0;
+  /* No inner scrollbars */
+  overflow:visible;
 }}
-.kpi-card > .tiers{{ margin-top:4px; }}
 
-/* The crest area expands to fill remaining space */
+/* Crest area grows to fill leftover space,
+   but can also shrink below its content when needed */
 .kpi-crest{{
   flex:1 1 auto;
-  min-height:220px;          /* sensible floor on tiny screens */
+  min-height:0;
   display:flex; align-items:center;
 }}
 
-/* Scale the crest *inside* that area */
+/* Inside the crest area, keep things in-bounds */
 .kpi-crest .score-badge{{
-  height:100%;
+  flex:1 1 auto;
+  min-height:0;
   display:flex; align-items:center; gap:16px;
-}}
-.kpi-crest .score-badge img{{
-  height:100%; width:auto; max-height:100%; object-fit:contain;
-  filter: drop-shadow(0 6px 12px rgba(0,0,0,.35));
+  overflow:hidden;          /* guard against wide assets */
 }}
 
-/* Text scales with available height but stays readable */
-.kpi-crest .score-badge .label{{ 
+/* Image scales to available height/width without forcing overflow */
+.kpi-crest .score-badge img{{
+  max-height:100%;          /* obey the crest area height */
+  max-width:60%;            /* leave room for the numbers */
+  height:auto; width:auto;  /* natural aspect */
+  object-fit:contain;
+}}
+
+/* Text column flexes too */
+.kpi-crest .score-badge .meta{{ flex:1 1 0; min-width:0; }}
+.kpi-crest .score-badge .label{{
   font-size: clamp(12px, 1.8vh, 18px);
   opacity:.95; letter-spacing:.4px; color:var(--ivory);
 }}
 .kpi-crest .score-badge .val{{
-  font-size: clamp(28px, 8vh, 96px);
+  font-size: clamp(28px, 8vh, 84px);
   font-weight:800; line-height:1.05; color:var(--ivory);
   text-shadow: 0 2px 6px rgba(0,0,0,.55);
 }}
@@ -573,15 +585,6 @@ aside.sidebar .card {{ background: transparent; }}
   color: var(--gold);
 }}
 
-/* Keep the click-overlay invisible on hover (no grey tint) */
-.kpi-crest .ghost-btn,
-.kpi-crest .ghost-btn:hover,
-.kpi-crest .ghost-btn:active,
-.kpi-crest .ghost-btn:focus{{
-  position:absolute; inset:0;
-  background:transparent!important; border:none!important;
-  box-shadow:none!important; outline:none!important;
-}}
 
 
 /* ---------- Wheel ---------- */

@@ -248,13 +248,13 @@ def clamp(v, lo, hi): return max(lo, min(hi, v))
 def heat_multiplier(n): return 1.5 if n>=20 else (1.25 if n>=10 else 1.0)
 
 def compute_BI(arc: str, inputs: Dict[str,int]) -> int:
-    if arc=="Help the Poor":
-        spend=inputs.get("spend",0)
-        sb = 1 if spend<25 else 2 if spend<50 else 3 if spend<100 else 4 if spend<200 else 5
-        return max(sb,hb)
-    if arc=="Sabotage Evil":
-        return inputs.get("impact_level",1)
-    return inputs.get("expose_level",1)
+    if arc == "Help the Poor":
+        spend = inputs.get("spend", 0)
+        sb = 1 if spend < 25 else 2 if spend < 50 else 3 if spend < 100 else 4 if spend < 200 else 5
+        return sb  # hb was undefined
+    if arc == "Sabotage Evil":
+        return inputs.get("impact_level", 1)
+    return inputs.get("expose_level", 1)
 
 def compute_base_score(BI:int, EB:int, OQM_list:List[int]) -> int:
     return clamp(BI + EB + clamp(sum(OQM_list), -2, 2), 1, 7)
@@ -336,9 +336,11 @@ def _bootstrap_from_sheets():
         return
     if not df.empty:
         ledger_df.set(df)
-        r = float(pd.to_numeric(df.get("renown_gain", pd.Series()), errors="coerce").fillna(0).sum())
-        n = float(pd.to_numeric(df.get("notoriety_gain", pd.Series()), errors="coerce").fillna(0).sum())
+        # in _reload()
+        r = float(pd.to_numeric(remote.get("renown_gain", pd.Series()), errors="coerce").fillna(0).sum())
+        n = float(pd.to_numeric(remote.get("notoriety_gain", pd.Series()), errors="coerce").fillna(0).sum())
         renown.set(r); notoriety.set(n)
+
 
 _bootstrap_from_sheets()
 
@@ -614,7 +616,7 @@ sidebar = ui.sidebar(
 tab_mission = ui.nav_panel(
     "🗺️ Mission Generator",
     ui.input_radio_buttons("arc", "Archetype",
-    ["Help the Poor","Sabotage Evil","Expose Corruption"], inline=True),
+        ["Help the Poor","Sabotage Evil","Expose Corruption"], inline=True),
     ui.layout_columns(
         ui.card(
             ui.input_numeric("spend", "Gold Spent", 40, min=0, step=5),
@@ -641,7 +643,7 @@ tab_mission = ui.nav_panel(
         ui.input_checkbox("nat20","Natural 20", False),
         ui.input_checkbox("nat1","Critical botch", False),
     ),
-    )
+)  # ← this closing paren was missing
 
 tab_resolve = ui.nav_panel(
     "🎯 Resolve & Log",
@@ -707,8 +709,9 @@ def server(input, output, session):
     def _eb_from_roll(roll: int, nat20: bool) -> int:
         if nat20:
             return 3
-    # map 0..30 to -3..+3 in 5-pt steps; clamp
-    return max(-3, min(3, int(round((roll - 15) / 5))))
+        # map 0..30 to -3..+3 in 5-pt steps; clamp
+        return max(-3, min(3, int(round((roll - 15) / 5))))
+
 
     def _arc_params():
         arc  = input.arc()

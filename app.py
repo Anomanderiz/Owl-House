@@ -613,6 +613,7 @@ tab_mission = ui.nav_panel(
     "🗺️ Mission Generator",
     ui.input_radio_buttons("arc", "Archetype",
         ["Help the Poor","Sabotage Evil","Expose Corruption"], inline=True),
+
     ui.layout_columns(
         ui.card(
             ui.input_numeric("spend", "Gold Spent", 40, min=0, step=5),
@@ -632,6 +633,7 @@ tab_mission = ui.nav_panel(
             id="exp_inputs"
         ),
     ),
+
     ui.hr(),
     ui.h4("Resolution"),
     ui.layout_columns(
@@ -639,7 +641,16 @@ tab_mission = ui.nav_panel(
         ui.input_checkbox("nat20","Natural 20", False),
         ui.input_checkbox("nat1","Critical botch", False),
     ),
-)  # ← this closing paren was missing
+
+    # --- Projected scores + queue trigger ---
+    ui.div(
+        ui.output_text("base_summary"),
+        ui.output_text("proj_summary"),
+        class_="mb-2"
+    ),
+    ui.input_action_button("queue", "Queue Mission → Resolve & Log", class_="btn btn-primary"),
+)
+
 
 tab_resolve = ui.nav_panel(
     "🎯 Resolve & Log",

@@ -300,7 +300,8 @@ def img_b64(img: Image.Image) -> str:
 # ---- helper: build the projected-points line (pure string) ----
 def projected_points_line(df: pd.DataFrame, arc: str, gold: float,
                           nat20: bool, nat1: bool, notor_total: float,
-                          impact: int|None, exposure: int|None, oqm: int, eb: int) -> str:
+                          impact: int|None, exposure: int|None, oqm: int, eb: int,
+                          bonus_pct: float) -> str:
     M  = mission_count(df)
     rp = renown_points_from(gold=gold, missions=M, arc=arc,
                             impact=impact, exposure=exposure, oqm=oqm, eb=eb,
@@ -308,7 +309,10 @@ def projected_points_line(df: pd.DataFrame, arc: str, gold: float,
     np = notoriety_points_from(gold=gold, missions=M, arc=arc,
                                impact=impact, exposure=exposure, oqm=oqm, eb=eb,
                                current_notor_total=notor_total, nat20=nat20, nat1=nat1)
-    return f"Projected Renown Points: {rp:.2f} • Projected Notoriety Points: {np:.2f} (Gold {gold:.0f}, Missions {M})"
+    rp *= (1.0 + bonus_pct)
+    np *= (1.0 + bonus_pct)
+    return (f"Projected Renown Points: {rp:.2f} • "
+            f"Projected Notoriety Points: {np:.2f} (Gold {gold:.0f}, Missions {M})")
 
 
 # ------------------------------ Reactive State ------------------------------
@@ -642,6 +646,16 @@ tab_mission = ui.nav_panel(
         ui.input_checkbox("nat1","Critical botch", False),
     ),
 
+    # Add directly below the Result / nat20 / nat1 row
+    ui.div(
+        ui.h5("Narrative Flair"),
+        ui.input_checkbox("flair_pass", "Passable (+10%)", False),
+        ui.input_checkbox("flair_good", "Good (+15%)", False),
+        ui.input_checkbox("flair_ex",  "Excellent (+25%)", False),
+        class_="mt-2"
+    ),
+
+
     # --- Projected scores + queue trigger ---
     ui.div(
         ui.output_text("base_summary"),
@@ -748,6 +762,14 @@ def server(input, output, session):
         oqm = oqm_from_inputs(arc, input)
         return arc, gold, eb, impact, exposure, oqm
 
+    def _narrative_bonus_pct() -> float:
+        b = 0.0
+        if input.flair_pass(): b += 0.10
+        if input.flair_good(): b += 0.15
+        if input.flair_ex():   b += 0.25
+        return b
+
+
     # Crest values → badges
     @output
     @render.ui
@@ -841,17 +863,18 @@ def server(input, output, session):
     @render.text
     def base_summary():
         arc, gold, eb, impact, exposure, oqm = _arc_params()
+        bonus = _narrative_bonus_pct()
         return projected_points_line(ledger_df.get(), arc, gold, input.nat20(), input.nat1(),
-                                     notoriety.get(), impact, exposure, oqm, eb)
+                                     notoriety.get(), impact, exposure, oqm, eb, bonus)
 
     @output
     @render.text
     def proj_summary():
         arc, gold, eb, impact, exposure, oqm = _arc_params()
-        return projected_points_line(
-            ledger_df.get(), arc, gold, input.nat20(), input.nat1(),
-            notoriety.get(), impact, exposure, oqm, eb
-        )
+        bonus = _narrative_bonus_pct()
+        return projected_points_line(ledger_df.get(), arc, gold, input.nat20(), input.nat1(),
+                                     notoriety.get(), impact, exposure, oqm, eb, bonus)
+
 
     # Queue mission
     @reactive.Effect
@@ -859,6 +882,7 @@ def server(input, output, session):
     def _queue():
         arc, gold, eb, impact, exposure, oqm = _arc_params()
         M = mission_count(ledger_df.get())
+        bonus = _narrative_bonus_pct()
 
         rp = renown_points_from(gold=gold, missions=M, arc=arc,
                                 impact=impact, exposure=exposure, oqm=oqm, eb=eb,
@@ -868,11 +892,18 @@ def server(input, output, session):
                                    current_notor_total=notoriety.get(),
                                    nat20=input.nat20(), nat1=input.nat1())
 
+        rp *= (1.0 + bonus)
+        np *= (1.0 + bonus)
+
         queued_mission.set(dict(
             ward=ward_focus.get(), archetype=arc, BI="-", EB=eb, OQM=oqm,
-            renown_gain=rp, notoriety_gain=np,
-            EI_breakdown=dict(gold=gold, missions_so_far=M, impact=impact, exposure=exposure)
+            renown_gain=round(rp, 2), notoriety_gain=round(np, 2),
+            EI_breakdown=dict(
+                gold=gold, missions_so_far=M, impact=impact, exposure=exposure,
+                narrative_bonus=f"{bonus*100:.0f}%"
+            )
         ))
+
 
 
     @output

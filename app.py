@@ -1,571 +1,310 @@
-# Night Owls — Waterdeep Secret Club (client-first spin & crest toggles)
-# Streamlit ≥ 1.33 recommended (st.fragment / st.experimental_fragment).
-# British spelling; no Ledger; no network I/O on spin path.
+# app.py — Night Owls (snappy edition)
+# Beautiful, functional, and fast: cached assets, one-time CSS, client-first wheel.
+# Requires: Streamlit >= 1.32 (for st.fragment); assets/ (bg.webp, logo.webp, complications_low.json, complications_high.json)
 
+import json, math, random
 import streamlit as st
-import pandas as pd
-import numpy as np
-import math, random, io, json, base64, datetime as dt, uuid, os
-from PIL import Image
+from typing import List
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Page & theme
-# ──────────────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Night Owls — Waterdeep Secret Club", page_icon="🦉", layout="wide")
 
-GOLD  = "#d0a85c"
-IVORY = "#eae7e1"
+# ----------------------------- Theme ---------------------------------
+GOLD  = "#D0A85C"
+IVORY = "#EAE6D7"
+INK   = "rgba(14,18,38,1.0)"          # deep navy
+GLASS = "rgba(14,18,38,0.60)"         # frosted panel
 
-# Prefer Streamlit's new fragment API; fall back if needed
-_fragment = getattr(st, "fragment", None) or getattr(st, "experimental_fragment", None)
-def fragment(fn):
-    if _fragment:
-        return _fragment(fn)
-    # graceful fallback: return fn itself (no partial rerun, but code still runs)
-    return fn
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Caches — heavy assets & data loaded once
-# ──────────────────────────────────────────────────────────────────────────────
-@st.cache_data(show_spinner=False)
-def load_b64(path: str) -> str:
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
-
-@st.cache_data(show_spinner=False)
-def load_first_b64(*paths) -> str:
-    for p in paths:
-        try:
-            with open(p, "rb") as f:
-                return base64.b64encode(f.read()).decode("utf-8")
-        except Exception:
-            continue
-    return ""
-
-@st.cache_data(show_spinner=False)
-def load_json(path: str):
-    with open(path, "r") as f:
-        return json.load(f)
-
-# Background & branding (cache once)
-BG_B64   = load_b64("assets/bg.png") if os.path.exists("assets/bg.png") else ""
-LOGO_IMG = Image.open("assets/logo.png") if os.path.exists("assets/logo.png") else None
-RENOWN_B64    = load_first_b64("assets/renown_gold.png")
-NOTORIETY_B64 = load_first_b64("assets/notoriety_red.png")
-MURAL_B64     = load_first_b64("assets/mural_sidebar.png", "assets/mural.png")
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Styles — keep glass blur on small wrapper; avoid nested blurs
-# ──────────────────────────────────────────────────────────────────────────────
-st.markdown(f"""
-<style>
-@import url("https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English+SC&display=swap");
-
-:root {{
-  --glass-bg: rgba(12,17,40,0.62);
-  --glass-alt: rgba(15,22,50,0.68);
-  --ivory: {IVORY};
-  --gold:  {GOLD};
-}}
-
-.stApp {{
-  background: url("data:image/png;base64,{BG_B64}") no-repeat center center fixed;
-  background-size: cover;
-}}
-.stApp::before {{
-  content: "";
-  position: fixed; inset: 0; pointer-events: none;
-  background:
-    radial-gradient(1000px 600px at 50% 20%, rgba(0,0,0,0.28), transparent 70%),
-    linear-gradient(to bottom, rgba(0,0,0,0.40), rgba(0,0,0,0.55));
-  z-index: 0;
-}}
-.main .block-container {{
-  background: var(--glass-bg);
-  backdrop-filter: blur(14px) saturate(1.15);
-  -webkit-backdrop-filter: blur(14px) saturate(1.15);
-  border: 1px solid rgba(208,168,92,0.22);
-  border-radius: 24px;
-  box-shadow: 0 20px 50px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06);
-  padding: 1.2rem 1.5rem !important;
-  z-index: 1;
-}}
-h1, h2, h3, h4 {{ color: var(--ivory); text-shadow: 0 1px 0 rgba(0,0,0,0.35); }}
-
-.stTabs [data-baseweb="tab-list"] {{ gap: .25rem; }}
-.stTabs [data-baseweb="tab"] {{
-  color: var(--ivory);
-  background: rgba(18,27,60,0.55);
-  border: 1px solid rgba(208,168,92,0.18);
-  border-bottom: 2px solid transparent;
-  border-top-left-radius: 14px; border-top-right-radius: 14px;
-  padding: .5rem .9rem;
-}}
-.stTabs [aria-selected="true"] {{
-  background: rgba(18,27,60,0.78);
-  border-color: rgba(208,168,92,0.35);
-  border-bottom-color: var(--gold);
-}}
-/* Hide Streamlit furniture */
-header, footer, #MainMenu {{ visibility: hidden; }}
-[data-testid="stToolbar"] {{ visibility: hidden; height: 0; position: fixed; }}
-div[data-testid="stHeader"] {{ display: none; }}
-</style>
-""", unsafe_allow_html=True)
-
-# ──────────────────────────────────────────────────────────────────────────────
-# State (lightweight); no Ledger anywhere
-# ──────────────────────────────────────────────────────────────────────────────
-ss = st.session_state
-ss.setdefault("renown", 0)
-ss.setdefault("notoriety", 0)
-ss.setdefault("last_angle", 0.0)         # last rendered wheel angle
-ss.setdefault("selected_index", None)    # last complication index
-ss.setdefault("spin_nonce", "")          # guards against duplicate query-param signals
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Sidebar
-# ──────────────────────────────────────────────────────────────────────────────
-with st.sidebar:
-    if LOGO_IMG is not None:
-        st.image(LOGO_IMG, use_column_width=True)
-    st.markdown("""
-    <div style="
-      border:1px solid rgba(208,168,92,.35);
-      border-radius:18px;padding:1rem 1.1rem;
-      background:rgba(14,18,38,.70);
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,.04), 0 10px 30px rgba(0,0,0,.35);">
-      <h3 style="font-family:'Cinzel Decorative',serif;color:var(--ivory);margin:0 0 .35rem 0;">Night Owls</h3>
-      <p style="font-family:'IM Fell English SC',serif;font-size:1.05rem;line-height:1.3;color:var(--ivory);opacity:.92;">
-      By moonlight take flight — by your deed will the city be freed.</p>
-    </div>
-    """, unsafe_allow_html=True)
-    # mural below the text box (pure overlay; pointer-events none)
+def inject_css_once():
+    if st.session_state.get("_css_done"):
+        return
+    st.session_state["_css_done"] = True
     st.markdown(f"""
-    <div style="position:relative;height:1080px;margin-top:8px;">
-      <div style="
-        position:absolute;inset:0;opacity:.82;pointer-events:none;
-        background:url('data:image/png;base64,{MURAL_B64}') no-repeat center top / contain;
-        filter: drop-shadow(0 6px 12px rgba(0,0,0,.25));">
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Crest badges — client-first toggles; no Python round-trip
-# ──────────────────────────────────────────────────────────────────────────────
-def crest_badge(title: str, value: int, img_b64: str, panel_html: str, dom_id: str):
-    html = f"""
     <style>
-      #{dom_id} .badge {{
-        display:inline-flex; align-items:center; gap:14px; padding:6px 0;
-        cursor:pointer; user-select:none; background:transparent; border:none;
+      :root {{
+        --gold: {GOLD};
+        --ivory: {IVORY};
+        --ink: {INK};
+        --glass: {GLASS};
       }}
-      #{dom_id} img {{
-        width: 220px; height: 220px; object-fit: contain;
-        filter: drop-shadow(0 6px 12px rgba(0,0,0,.35));
+      /* Background served as a normal URL: lets the browser cache it */
+      .stApp {{
+        background-image: url('assets/bg.webp');
+        background-size: cover;
+        background-attachment: scroll;
+        background-position: center center;
       }}
-      #{dom_id} .meta .label {{
-        font-size: 15px; color: {IVORY}; opacity: .85; letter-spacing: .4px;
+
+      /* Global typography & chrome */
+      html, body, .stApp {{
+        color: var(--ivory);
       }}
-      #{dom_id} .meta .val {{
-        font-size: 56px; color: {IVORY}; font-weight: 800; line-height: 1.05;
+      h1, h2, h3, h4 {{
+        color: var(--ivory);
         text-shadow: 0 1px 0 rgba(0,0,0,.35);
       }}
-      #{dom_id} .tiers {{
-        display:none; margin-top:10px; padding:14px 16px; border-radius:16px;
-        background: rgba(16,24,32,.55); border:1px solid rgba(208,168,92,.45);
+      header, footer, #MainMenu {{ visibility: hidden; }}
+
+      /* Glass cards */
+      .glass {{
+        background: var(--glass);
+        border: 1px solid rgba(208,168,92,.35);
+        border-radius: 16px;
         box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
+        -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
       }}
-      #{dom_id}.open .tiers {{ display:block; animation: fadein .25s ease-out; }}
-      @keyframes fadein {{ from {{opacity:0; transform: translateY(6px);}} to {{opacity:1; transform:none;}} }}
-      @media (max-width: 900px) {{
-        #{dom_id} img{{ width:72px; height:72px; }}
-        #{dom_id} .meta .val{{ font-size:42px; }}
+
+      /* Title row */
+      .titlebar {{
+        display: grid; grid-template-columns: 72px 1fr; gap: 16px; align-items: center;
+        padding: 12px 16px; margin-bottom: 10px;
+      }}
+      .titlebar img {{
+        width: 72px; height: 72px; object-fit: contain; image-rendering: -webkit-optimize-contrast;
+        filter: drop-shadow(0 6px 12px rgba(0,0,0,.45));
+      }}
+      .subtitle {{ color: rgba(234,230,215,.85); font-size: 0.95rem; }}
+
+      /* Result card under wheel (server-rendered) */
+      .result-card {{
+        margin-top: 14px; padding: 14px 16px; border-radius: 14px;
+        border: 1px solid rgba(208,168,92,.45); background: rgba(14,18,38,.66);
+        box-shadow: 0 8px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.05);
+      }}
+      .result-number {{ letter-spacing: .02em; opacity: .9; margin-bottom: 8px; }}
+      .result-text {{ line-height: 1.45; }}
+
+      /* Hide the plumbing (hidden form & inputs) */
+      .visually-hidden {{
+        position: absolute !important; height: 1px; width: 1px; overflow: hidden;
+        clip: rect(1px, 1px, 1px, 1px); white-space: nowrap;
       }}
     </style>
-    <div id="{dom_id}">
-      <div class="badge" title="Click to toggle tiers">
-        <img src="data:image/png;base64,{img_b64}" alt="{title}">
-        <div class="meta">
-          <div class="label">{title}</div>
-          <div class="val">{value}</div>
-        </div>
+    """, unsafe_allow_html=True)
+
+# ----------------------------- Data ----------------------------------
+
+@st.cache_data(show_spinner=False)
+def load_complications(heat: str) -> List[str]:
+    """Load complications text for 'High' or 'Low' heat; cached to avoid disk on reruns."""
+    path = "assets/complications_high.json" if heat == "High" else "assets/complications_low.json"
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        # Normalise: accept either list[str] or list[dict{{"text": ...}}]
+        if isinstance(data, list) and all(isinstance(x, str) for x in data):
+            return data
+        elif isinstance(data, list) and all(isinstance(x, dict) and "text" in x for x in data):
+            return [x["text"] for x in data]
+        else:
+            return [str(x) for x in data]
+    except Exception as e:
+        return [f"(Error loading {path}: {e})"]
+
+def get_heat_state(notoriety: int) -> str:
+    return "High" if notoriety >= 10 else "Low"
+
+# ----------------------------- UI: Header ----------------------------
+
+inject_css_once()
+st.markdown("""
+<div class="titlebar glass">
+  <img src="assets/logo.webp" alt="Night Owls logo"/>
+  <div>
+    <div style="font-size:1.35rem; font-weight:700; letter-spacing:.02em;">Night Owls — Waterdeep Secret Club</div>
+    <div class="subtitle">Snappier than a green dragon’s temper.</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ----------------------------- State --------------------------------
+
+if "renown" not in st.session_state:    st.session_state.renown = 0
+if "notoriety" not in st.session_state: st.session_state.notoriety = 0
+if "spin_last_idx" not in st.session_state: st.session_state.spin_last_idx = None
+
+# ----------------------------- Score Row (simple, light) ------------
+
+col1, col2, colsp = st.columns([1,1,2], gap="large")
+with col1:
+    st.caption("Renown")
+    st.number_input(" ", key="renown", min_value=0, max_value=999, step=1, label_visibility="collapsed")
+with col2:
+    st.caption("Notoriety")
+    st.number_input("  ", key="notoriety", min_value=0, max_value=999, step=1, label_visibility="collapsed")
+
+# ----------------------------- Wheel Fragment -----------------------
+
+# Use a fragment so only this region reruns when we log a result.
+@st.fragment
+def wheel_block():
+    st.markdown("### Wheel of Misfortune")
+
+    heat_state = get_heat_state(st.session_state.notoriety)
+    st.caption(f"Heat: **{heat_state}**")
+
+    options = load_complications(heat_state)
+    n = max(1, len(options))
+
+    # A unique token so our hidden input can be targeted deterministically from JS
+    input_key = st.session_state.get("_spin_input_key")
+    if not input_key:
+        input_key = st.session_state["_spin_input_key"] = f"spin_{random.randint(10**6, 10**7-1)}"
+
+    # ---- Client-first wheel (instant) ----
+    # We do not ship the long option texts to the canvas — the browser only needs N.
+    # After animation ends, JS writes the chosen index into a hidden text input and clicks a hidden submit button.
+    # That triggers a tiny rerun of this fragment only; then we render the pretty server-side result box.
+
+    wheel_html = f"""
+    <div id="wheel-wrapper" class="glass" style="padding:16px; text-align:center;">
+      <div style="display:flex; justify-content:center; align-items:center; position:relative;">
+        <canvas id="wheelCanvas" width="560" height="560" style="max-width: 92vw; height:auto; border-radius:50%; box-shadow:0 18px 40px rgba(0,0,0,.45);"></canvas>
+        <button id="spinButton" aria-label="Spin" style="
+            position:absolute; width:132px; height:132px; border-radius:50%;
+            border:1px solid rgba(208,168,92,.6);
+            background: radial-gradient(ellipse at top, rgba(255,255,255,.18), rgba(255,255,255,.03));
+            color: {IVORY}; font-weight:700; letter-spacing:.03em; cursor:pointer;
+            box-shadow: 0 12px 28px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.08);
+        ">SPIN</button>
       </div>
-      <div class="tiers">{panel_html}</div>
-    </div>
-    <script>
-      (function(){{
-        const root = document.getElementById("{dom_id}");
-        const badge = root?.querySelector('.badge');
-        badge?.addEventListener('click', () => root.classList.toggle('open'));
-      }})();
-    </script>
-    """
-    st.components.v1.html(html, height=260)
-
-def renown_panel_html():
-    return f"""
-    <h4 style="color:{IVORY};margin:.1rem 0 .5rem 0;">Veil-Fame perks — subtle favours while the mask stays on</h4>
-    <table style="width:100%;border-collapse:collapse;color:{IVORY};">
-      <tr><th style="text-align:left;padding:6px 8px;">Tier</th><th style="text-align:left;padding:6px 8px;">Threshold</th><th style="text-align:left;padding:6px 8px;">Perks</th></tr>
-      <tr><td style="color:{GOLD};font-weight:700;">R1</td><td>5</td><td><b>Street Signals</b>: glean rumours; recognised hand-signs in Dock/Field/Trades.</td></tr>
-      <tr><td style="color:{GOLD};font-weight:700;">R2</td><td>10</td><td><b>Quiet Hands</b>: once/session arrange a safe hand-off nearby.</td></tr>
-      <tr><td style="color:{GOLD};font-weight:700;">R3</td><td>15</td><td><b>Crowd Cover</b>: once/long rest break line-of-sight for a round.</td></tr>
-      <tr><td style="color:{GOLD};font-weight:700;">R4</td><td>20</td><td><b>Whisper Network</b>: one social check at advantage vs townsfolk; free d6 help.</td></tr>
-      <tr><td style="color:{GOLD};font-weight:700;">R5</td><td>25</td><td><b>Safehouses</b>: two boltholes; negate one post-job pursuit/adventure.</td></tr>
-      <tr><td style="color:{GOLD};font-weight:700;">R6</td><td>30</td><td><b>Folk Halo</b>: quiet −10% on mundane gear; the crowd “coincidentally” helps once/adventure.</td></tr>
-    </table>
-    """
-
-def notoriety_panel_html():
-    return f"""
-    <h4 style="color:{IVORY};margin:.1rem 0 .5rem 0;">City Heat — escalating responses without unmasking you</h4>
-    <table style="width:100%;border-collapse:collapse;color:{IVORY};">
-      <tr><th style="text-align:left;padding:6px 8px;">Band</th><th style="text-align:left;padding:6px 8px;">Score</th><th style="text-align:left;padding:6px 8px;">Response</th></tr>
-      <tr><td style="color:#E06565;font-weight:700;">N0 — Cold</td><td>0–4</td><td>Nothing special.</td></tr>
-      <tr><td style="color:#E06565;font-weight:700;">N1 — Warm</td><td>5–9</td><td><b>Ward sweeps</b> after jobs in hot wards.</td></tr>
-      <tr><td style="color:#E06565;font-weight:700;">N2 — Hot</td><td>10–14</td><td><b>Pattern watch</b>: repeat MOs harder; bag checks.</td></tr>
-      <tr><td style="color:#E06565;font-weight:700;">N3 — Scalding</td><td>15–19</td><td><b>Counter-ops</b>: rivals interfere; residue detectors.</td></tr>
-      <tr><td style="color:#E06565;font-weight:700;">N4 — Burning</td><td>20–24</td><td><b>Scry-sweeps</b>: casting risks a Trace test.</td></tr>
-      <tr><td style="color:#E06565;font-weight:700;">N5 — Inferno</td><td>25–30</td><td><b>Citywide dragnet</b>: curfews; bounty posted.</td></tr>
-    </table>
-    """
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Mechanics helpers (unchanged maths; concise)
-# ──────────────────────────────────────────────────────────────────────────────
-def heat_multiplier(n): return 1.5 if n >= 20 else (1.25 if n >= 10 else 1.0)
-def clamp(v, lo, hi): return max(lo, min(hi, v))
-
-def compute_BI(arc, inputs):
-    if arc == "Help the Poor":
-        spend=inputs.get("spend",0); hh=inputs.get("households",0)
-        sb = 1 if spend<25 else 2 if spend<50 else 3 if spend<100 else 4 if spend<200 else 5
-        hb = 1 if hh<10 else 2 if hh<25 else 3 if hh<50 else 4 if hh<100 else 5
-        return max(sb,hb)
-    if arc == "Sabotage Evil":
-        return inputs.get("impact_level",1)
-    return inputs.get("expose_level",1)
-
-def compute_base_score(BI, EB, OQM_list): return clamp(BI+EB+clamp(sum(OQM_list),-2,2),1,7)
-
-# ──────────────────────────────────────────────────────────────────────────────
-# KPI row — crest badges + quick actions
-# ──────────────────────────────────────────────────────────────────────────────
-c1, c2, c3 = st.columns([1,1,1])
-with c1:
-    crest_badge("Renown",    ss.renown,    RENOWN_B64,    renown_panel_html(),    "renown_crest")
-with c2:
-    crest_badge("Notoriety", ss.notoriety, NOTORIETY_B64, notoriety_panel_html(), "notoriety_crest")
-with c3:
-    ward_focus = st.selectbox("Active Ward", ["Dock","Field","South","North","Castle","Trades","Sea"])
-
-    # Heat management (server-side; light)
-    colA, colB = st.columns(2)
-    with colA:
-        if st.button("Lie Low (−1/−2 Heat)"):
-            drop = 2 if ss.notoriety >= 10 else 1
-            ss.notoriety = max(0, ss.notoriety - drop)
-            st.success(f"Heat reduced by {drop}.")
-    with colB:
-        if st.button("Proxy Charity (−1 Heat)"):
-            ss.notoriety = max(0, ss.notoriety - 1)
-            st.success("Heat −1.")
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Tabs
-# ──────────────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3 = st.tabs(["🗺️ Mission Generator","🎯 Resolve","☸️ Wheel of Fortune"])
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Tab 1 — Mission Generator (unchanged logic; practical UI)
-# ──────────────────────────────────────────────────────────────────────────────
-with tab1:
-    st.markdown("### Create a Mission")
-    arc = st.radio("Archetype", ["Help the Poor","Sabotage Evil","Expose Corruption"], horizontal=True)
-    col1,col2,col3 = st.columns(3)
-    if arc=="Help the Poor":
-        spend = col1.number_input("Gold Spent", 0, step=5, value=40)
-        hh    = col2.number_input("Households Aided", 0, step=5, value=25)
-        plan  = col3.checkbox("Solid Plan (+1 OQM)", True)
-        inputs = {"spend":spend,"households":hh}
-    elif arc=="Sabotage Evil":
-        impact = col1.slider("Impact Level (1 minor→5 dismantled)",1,5,3)
-        plan   = col2.checkbox("Inside Contact (+1 OQM)")
-        rushed = col3.checkbox("Rushed/Loud (−1 OQM)")
-        inputs = {"impact_level":impact}
-    else:
-        expose = col1.slider("Exposure Level (1 clerk→5 city scandal)",1,5,3)
-        proof  = col2.checkbox("Hard Proof / Magical Corroboration (+1 OQM)")
-        reused = col3.checkbox("Reused Signature (−1 OQM)")
-        inputs = {"expose_level":expose}
-
-    st.markdown("#### Execution")
-    e1,e2,e3 = st.columns(3)
-    with e1: margin = st.number_input("Success Margin",0,20,2)
-    with e2: nat20  = st.checkbox("Natural 20")
-    with e3: nat1   = st.checkbox("Critical botch")
-
-    EB = 3 if nat20 else (2 if margin>=5 else (1 if margin>=1 else 0))
-    OQM = []
-    if plan: OQM.append(+1)
-    if arc=="Sabotage Evil" and rushed: OQM.append(-1)
-    if arc=="Expose Corruption" and reused: OQM.append(-1)
-    if arc=="Expose Corruption" and 'proof' in locals() and proof: OQM.append(+1)
-
-    BI         = compute_BI(arc, inputs)
-    base_score = compute_base_score(BI, EB, OQM)
-    st.markdown(f"**Base Impact:** {BI} • **EB:** {EB} • **OQM sum:** {sum(OQM)} → **Base Score:** {base_score}")
-
-    st.markdown("#### Exposure Index")
-    a,b = st.columns(2)
-    with a:
-        vis  = st.slider("Visibility (0–3)",0,3,1)
-        noise= st.slider("Noise (0–3)",0,3,1)
-        sig  = st.slider("Signature (0–2)",0,2,0)
-        wit  = st.slider("Witnesses (0–2)",0,2,1)
-    with b:
-        mag  = st.slider("Magic Trace (0–2)",0,2,0)
-        conc = st.slider("Concealment (0–3)",0,3,2)
-        mis  = st.slider("Misdirection (0–2)",0,2,1)
-
-    EI = (vis+noise+sig+wit+mag)-(conc+mis)
-    ren_mult = {"Help the Poor":1.0,"Sabotage Evil":1.5,"Expose Corruption":2.0}[arc]
-    ren_gain = int(round(base_score * ren_mult))
-    cat_base = {"Help the Poor":1,"Sabotage Evil":2,"Expose Corruption":3}[arc]
-    heat = max(0, math.ceil((cat_base + max(0,EI-1) + (1 if nat1 else 0)) * heat_multiplier(ss.notoriety)))
-    if nat20: heat = max(0, heat-1)
-
-    st.markdown(f"**Projected Renown:** {ren_gain} • **Projected Notoriety:** {heat} • **EI:** {EI}")
-
-    if st.button("Queue Mission → Resolve", type="primary"):
-        ss._queued_mission = dict(
-            ward=ward_focus, archetype=arc, BI=BI, EB=EB, OQM=sum(OQM),
-            renown_gain=ren_gain, notoriety_gain=heat,
-            EI_breakdown={"visibility":vis,"noise":noise,"signature":sig,"witnesses":wit,"magic":mag,"concealment":conc,"misdirection":mis}
-        )
-        st.success("Mission queued.")
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Tab 2 — Resolve (no Ledger persisted; applies to session only)
-# ──────────────────────────────────────────────────────────────────────────────
-with tab2:
-    st.markdown("### Resolve Mission")
-    q = ss.get("_queued_mission")
-    if q:
-        st.json(q)
-        notes = st.text_input("Notes (optional)", "")
-        if st.button("Apply Gains", type="primary"):
-            ss.renown    += q["renown_gain"]
-            ss.notoriety += q["notoriety_gain"]
-            ss._queued_mission = None
-            st.success("Applied to session.")
-    else:
-        st.info("No queued mission.")
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Tab 3 — Wheel of Fortune (client-first spin, SVG canvas, no blocking I/O)
-# IMPORTANT: Call the fragment *inside* the tab and do not alter container path
-# from within the fragment function. Use stable widget keys/labels.
-# ──────────────────────────────────────────────────────────────────────────────
-@fragment
-def wheel_fragment(options, heat_state, ward_focus, wheel_size=600):
-    # Sentinel anchor to scope DOM queries to this block only
-    anchor_id = "wheel_anchor"
-    st.markdown(f'<div id="{anchor_id}"></div>', unsafe_allow_html=True)
-
-    # Stable, unambiguous sentinel button (hidden via JS; used to trigger rerun)
-    sentinel_label = "SPIN_SENTINEL"
-    sentinel_key   = "spin_sentinel"
-    sentinel_clicked = st.button(sentinel_label, key=sentinel_key)
-
-    # Robust query param reader (supports both new and legacy APIs)
-    def _read_qp(name, default=None):
-        try:
-            if hasattr(st, "query_params"):
-                v = st.query_params.get(name, default)
-            else:
-                v = st.experimental_get_query_params().get(name, default)
-                if isinstance(v, list):
-                    v = v[-1] if v else default
-            return v
-        except Exception:
-            return default
-
-    spin_idx_str = _read_qp("spin", None)
-    nonce_str    = _read_qp("spinNonce", None)
-
-    n          = len(options)
-    WHEEL_SIZE = wheel_size
-
-    # If the sentinel fired AND we see a new nonce, accept the client-selected index
-    if sentinel_clicked and spin_idx_str is not None and nonce_str and nonce_str != ss.spin_nonce:
-        try:
-            idx = int(spin_idx_str)
-            if 0 <= idx < n:
-                ss.selected_index = idx
-                ss.spin_nonce     = nonce_str
-                # compute final angle purely for display continuity
-                seg = 360.0 / n
-                rotations = 6  # cosmetic on server; real animation is client-side
-                ss.last_angle = rotations*360.0 + (idx + 0.5)*seg
-        except Exception:
-            pass
-
-    # Build a lightweight SVG once per rerun (no PNG decode)
-    def wheel_svg(n_seg: int, size: int = 600) -> str:
-        r = size/2 - 6
-        cx = cy = size/2
-        cols = ["#173b5a", "#12213f", "#0d3b4f", "#112b44"]
-        parts = [f'<svg id="wheel_svg" viewBox="0 0 {size} {size}" width="{size}" height="{size}" '
-                 f'style="border-radius:50%;box-shadow:0 10px 40px rgba(0,0,0,.55);'
-                 f'background:radial-gradient(closest-side, rgba(255,255,255,.06), transparent);">'
-                 ]
-        for i in range(n_seg):
-            a0 = 2*math.pi*i/n_seg - math.pi/2
-            a1 = 2*math.pi*(i+1)/n_seg - math.pi/2
-            x0, y0 = cx + r*math.cos(a0), cy + r*math.sin(a0)
-            x1, y1 = cx + r*math.cos(a1), cy + r*math.sin(a1)
-            large = 1 if (a1 - a0) % (2*math.pi) > math.pi else 0
-            path = (f"M {cx},{cy} L {x0:.2f},{y0:.2f} "
-                    f"A {r:.2f},{r:.2f} 0 {large} 1 {x1:.2f},{y1:.2f} Z")
-            parts.append(f'<path d="{path}" fill="{cols[i%len(cols)]}" stroke="#213a53" stroke-width="1"/>')
-        parts.append(f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{GOLD}" stroke-width="6"/>')
-        # minimalist numbers
-        for i in range(n_seg):
-            ang = 2*math.pi*(i+0.5)/n_seg - math.pi/2
-            tx  = cx + (r-58)*math.cos(ang)
-            ty  = cy + (r-58)*math.sin(ang)
-            parts.append(f'<text x="{tx:.1f}" y="{ty:.1f}" text-anchor="middle" '
-                         f'fill="{IVORY}" font-size="14" font-family="sans-serif">{i+1}</text>')
-        parts.append("</svg>")
-        return "".join(parts)
-
-    svg_markup = wheel_svg(n, WHEEL_SIZE)
-    btn_diam   = max(96, int(WHEEL_SIZE * 0.18))
-    angle      = ss.last_angle  # server-known angle for continuity
-
-    heat_caption = f"Heat: **{heat_state}**"
-    st.caption(heat_caption)
-
-    # Wheel UI — centre overlay button is cheap, flat (no heavy blur)
-    comp_html = f"""
-    <style>
-      #wheel_wrap {{
-        position: relative; width: {WHEEL_SIZE}px; height: {WHEEL_SIZE}px; margin: 0 auto;
-      }}
-      #pointer {{
-        position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
-        width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent;
-        border-bottom: 26px solid {GOLD}; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4));
-      }}
-      #spin_overlay {{
-        position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
-        width: {btn_diam}px; height: {btn_diam}px; border-radius: {btn_diam/2}px;
-        border: 1px solid rgba(208,168,92,0.45);
-        background: rgba(255,255,255,.06); /* flat, cheap */
-        box-shadow: 0 8px 18px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.06);
-        color: {IVORY}; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
-        cursor: pointer; user-select: none; display: grid; place-items: center;
-        transition: transform .08s ease;
-      }}
-      #spin_overlay:hover {{ transform: translate(-50%,-50%) scale(1.015); }}
-    </style>
-    <div id="wheel_wrap">
-      <div id="pointer"></div>
-      {svg_markup}
-      <div id="spin_overlay">SPIN!</div>
+      <div id="clientResult" style="margin-top:12px; opacity:.85; font-size:.95rem;"></div>
     </div>
 
     <script>
-    (function(){{
-      const hiddenText = "{sentinel_label}";
-      const anchorId   = "{anchor_id}";
-      const n          = {n};
-      const rotateMs   = 3200; // same as CSS transition time
+    (function() {{
+      const N = {n};
+      const canvas = document.getElementById('wheelCanvas');
+      const ctx = canvas.getContext('2d');
+      const size = canvas.width;
+      const r = size/2;
+      const TAU = Math.PI*2;
+
+      // Palette: simple alternating segments for clarity (no heavy shadows per segment)
+      const A = '#2a2f4a', B = '#3a3f5f';
+
+      function drawWheel(angle) {{
+        ctx.clearRect(0,0,size,size);
+        ctx.save();
+        ctx.translate(r, r);
+        ctx.rotate(angle);
+        for (let i=0; i<N; i++) {{
+          const a0 = i * TAU/N, a1 = (i+1) * TAU/N;
+          ctx.beginPath();
+          ctx.moveTo(0,0); ctx.arc(0,0, r-6, a0, a1);
+          ctx.closePath();
+          ctx.fillStyle = (i % 2 === 0) ? A : B;
+          ctx.fill();
+
+          // Labels: just numbers to keep the canvas cheap
+          const mid = (a0 + a1)/2;
+          ctx.save();
+          ctx.rotate(mid);
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillStyle = 'rgba(234,230,215,0.95)';
+          ctx.font = '700 18px system-ui, sans-serif';
+          ctx.fillText(String(i+1).padStart(2,'0'), (r-60), 0);
+          ctx.restore();
+        }}
+        // Pointer
+        ctx.restore();
+        ctx.beginPath();
+        ctx.moveTo(r, r-12);
+        ctx.lineTo(r+26, r);
+        ctx.lineTo(r, r+12);
+        ctx.closePath();
+        ctx.fillStyle = '{GOLD}';
+        ctx.shadowColor = 'rgba(0,0,0,.4)';
+        ctx.shadowBlur = 8;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }}
+
       let spinning = false;
+      let current = 0;    // radians
+      drawWheel(current);
 
-      const w = document.getElementById('wheel_svg');
-      if (w) {{
-        w.style.transition = 'transform 3.2s cubic-bezier(.17,.67,.32,1.35)';
-        // apply server-known angle immediately for visual continuity
-        requestAnimationFrame(() => {{ w.style.transform = 'rotate({angle}deg)'; }});
-      }}
+      function easeOutCubic(t) {{ return 1 - Math.pow(1-t, 3); }}
 
-      // Hide the sentinel button within the local block only (no global scans)
-      try {{
-        const scope = window.parent.document;
-        const anchor = scope.getElementById(anchorId);
-        const block  = anchor ? anchor.closest('div[data-testid="stVerticalBlock"]') : scope;
-        const btn = Array.from(block.querySelectorAll('button'))
-          .find(b => (b.innerText||'').trim() === hiddenText);
-        if (btn) btn.style.display = 'none';
-      }} catch(e) {{ /* ignore */ }}
-
-      function clickSentinelWith(index) {{
-        try {{
-          const scope  = window.parent.document;
-          const anchor = scope.getElementById(anchorId);
-          const block  = anchor ? anchor.closest('div[data-testid="stVerticalBlock"]') : scope;
-
-          // write spin index & nonce to query params to make state explicit
-          const url = new URL(window.parent.location.href);
-          url.searchParams.set('spin', String(index));
-          url.searchParams.set('spinNonce', String(Date.now()));
-          window.parent.history.replaceState({{}}, '', url.toString());
-
-          // now click the sentinel in this same block to trigger a rerun
-          const btn = Array.from(block.querySelectorAll('button'))
-            .find(b => (b.innerText||'').trim() === hiddenText);
-          btn && btn.click();
-        }} catch(e) {{}}
-      }}
-
-      document.getElementById('spin_overlay')?.addEventListener('click', () => {{
-        if (spinning || !w) return;
+      function spin() {{
+        if (spinning) return;
         spinning = true;
-        // client-first: choose random result immediately
-        const idx = Math.floor(Math.random() * n);
-        const seg = 360 / n;
-        const spins = 4 + Math.floor(Math.random() * 3); // 4–6
-        const angle = spins*360 + (idx + 0.5)*seg;
+        document.getElementById('clientResult').textContent = '...';
+        // Choose a target segment; random rotations for drama
+        const targetIdx = Math.floor(Math.random() * N);
+        const spins = 4 + Math.floor(Math.random()*3); // 4–6 rotations
+        // Compute angle so that the pointer (at 0 rad) lands in the middle of target segment.
+        const segAngle = TAU / N;
+        const targetAngle = TAU * spins + ((targetIdx + 0.5) * segAngle);
+        const duration = 2200 + Math.random()*650; // ms
 
-        // start animation immediately
-        requestAnimationFrame(() => {{ w.style.transform = `rotate(${angle}deg)`; }});
+        const start = performance.now();
+        const startAngle = current;
 
-        // after animation completes, notify Python via sentinel + query params
-        setTimeout(() => {{
-          clickSentinelWith(idx);
-          spinning = false;
-        }}, rotateMs + 50);
-      }});
+        function frame(now) {{
+          let t = (now - start) / duration;
+          if (t > 1) t = 1;
+          const eased = easeOutCubic(t);
+          const angle = startAngle + (targetAngle - startAngle) * eased;
+          drawWheel(angle);
+          if (t < 1) requestAnimationFrame(frame);
+          else finish(targetIdx, angle);
+        }}
+        requestAnimationFrame(frame);
+      }}
+
+      function finish(idx, angle) {{
+        current = angle % TAU;
+        document.getElementById('clientResult').textContent = 'Result: #' + String(idx+1).padStart(2,'0') + ' (revealed)';
+        // After the animation finishes, notify Streamlit via hidden input + submit.
+        const input = document.getElementById('{input_key}');
+        if (input) {{
+          input.value = String(idx);
+        }}
+        const btn = document.getElementById('submit_{input_key}');
+        if (btn) {{
+          // Click the hidden submit to trigger a tiny rerun of just this fragment.
+          btn.click();
+        }}
+        spinning = false;
+      }}
+
+      document.getElementById('spinButton').addEventListener('click', spin);
     }})();
     </script>
     """
-    st.components.v1.html(comp_html, height=WHEEL_SIZE + 40)
 
-    # Pretty result card (renders only if a result exists; no heavy effects)
-    if ss.get("selected_index") is not None:
-        idx = ss["selected_index"]
+    st.components.v1.html(wheel_html, height=680, scrolling=False)
+
+    # Hidden form: indexed by a deterministic key so JS can target it directly
+    with st.form(key=f"form_{input_key}"):
+        _ = st.text_input("spin_index", key=input_key, label_visibility="collapsed")
+        # The button is visible to the DOM but we hide it via CSS; give it a deterministic ID for JS.
+        submitted = st.form_submit_button("SPIN_RERUN_TRIGGER", type="secondary")
+        st.markdown(
+            f"<script>document.currentScript.previousElementSibling.querySelector('button').id = 'submit_{input_key}';</script>",
+            unsafe_allow_html=True
+        )
+
+    if submitted:
+        # Minimal server work: just parse the index and store
+        try:
+            idx = int(st.session_state.get(input_key, "").strip())
+            st.session_state.spin_last_idx = idx if 0 <= idx < n else None
+        except Exception:
+            st.session_state.spin_last_idx = None
+        # Clear the input to avoid stale clicks
+        st.session_state[input_key] = ""
+
+    # Pretty, server-rendered result (full text)
+    if st.session_state.get("spin_last_idx") is not None:
+        i = st.session_state["spin_last_idx"]
+        txt = options[i] if 0 <= i < n else "—"
         st.markdown(f"""
-        <div style="
-          max-width:900px;margin:18px auto 0;padding:18px 20px;border-radius:14px;
-          background:rgba(16,24,32,.55);border:1px solid rgba(208,168,92,.45);
-          box-shadow:0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
-          animation:fadein .35s ease-out;">
-          <div style="font-size:13px;letter-spacing:.4px;color:{GOLD};text-transform:uppercase;opacity:.9;margin-bottom:6px;">
-            Result {idx+1:02d} / {n:02d}
-          </div>
-          <div style="color:{IVORY};line-height:1.5;font-size:16px;">{options[idx]}</div>
+        <div class="result-card">
+          <div class="result-number">Result {i+1:02d} / {n:02d} • Heat: {heat_state}</div>
+          <div class="result-text">{txt}</div>
         </div>
-        <style>@keyframes fadein {{ from {{opacity:0; transform: translateY(6px);}} to {{opacity:1; transform:none;}} }}</style>
         """, unsafe_allow_html=True)
 
-# Build Wheel tab containers/inputs outside, then mount the fragment INSIDE the tab
-with tab3:
-    st.markdown("### Wheel of Fortune")
-    heat_state = "High" if ss.notoriety >= 10 else "Low"
-    table_path = "assets/complications_high.json" if heat_state=="High" else "assets/complications_low.json"
-    options    = load_json(table_path)
-    wheel_fragment(options, heat_state, ward_focus, wheel_size=600)
+# Render the wheel block (fragment)
+wheel_block()

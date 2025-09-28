@@ -228,6 +228,14 @@ def img_b64(img: Image.Image) -> str:
     img.save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
+# ---- helper: build the projected-points line (pure string) ----
+def projected_points_line(df: pd.DataFrame, arc: str, gold: float,
+                          nat20: bool, nat1: bool, notor_total: float) -> str:
+    M  = mission_count(df)
+    rp = renown_points_from(gold, M, arc, nat20=nat20, nat1=nat1)
+    np = notoriety_points_from(gold, M, arc, notor_total, nat20=nat20, nat1=nat1)
+    return f"Projected Renown Points: {rp:.2f} • Projected Notoriety Points: {np:.2f} (Gold {gold:.0f}, Missions {M})"
+
 # ------------------------------ Reactive State ------------------------------
 
 renown      = reactive.Value(0)
@@ -701,18 +709,18 @@ def server(input, output, session):
     @output
     @render.text
     def base_summary():
-        arc = input.arc()
-        gold = float(input.spend() if hasattr(input, "spend") else 0)
-        M = mission_count(ledger_df.get())
-        rp = renown_points_from(gold, M, arc, nat20=input.nat20(), nat1=input.nat1())
-        np = notoriety_points_from(gold, M, arc, notoriety.get(), nat20=input.nat20(), nat1=input.nat1())
-        return f"Projected Renown Points: {rp:.2f} • Projected Notoriety Points: {np:.2f} (Gold {gold:.0f}, Missions {M})"
+        arc  = input.arc()
+        gold = float(input.spend() if hasattr(input, "spend") else 0.0)
+        return projected_points_line(ledger_df.get(), arc, gold, input.nat20(), input.nat1(), notoriety.get())
 
     @output
     @render.text
     def proj_summary():
-        # Same content as base_summary, or drop entirely if redundant
-        return base_summary()
+        # If you keep this second line, compute it the same way (don’t call base_summary()).
+        arc  = input.arc()
+        gold = float(input.spend() if hasattr(input, "spend") else 0.0)
+        return projected_points_line(ledger_df.get(), arc, gold, input.nat20(), input.nat1(), notoriety.get())
+
 
     # Queue mission
     @reactive.Effect

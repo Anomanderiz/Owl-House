@@ -617,8 +617,52 @@ aside.sidebar .card {{ background: transparent; }}
 .tt-red  {{ color: var(--heat-red); }}  /* Notoriety labels */
 .ward-card{{display:flex;flex-direction:column;gap:10px}}
 .ward-preview img{{display:block;width:100%;height:auto}}
+
+/* Normalised action-strip height shared by both KPI cards */
+:root {{ --kpi-actions-h: 56px; }}
+
+.kpi-card .card-body{{
+  display:flex; flex-direction:column; gap:12px; min-height:0; overflow:visible;
+}}
+
+/* Crest fills what's left between header and actions */
+.kpi-crest{{ flex:1 1 auto; min-height:0; display:flex; align-items:center; }}
+.kpi-crest .score-badge{{ flex:1 1 auto; min-height:0; display:flex; align-items:center; gap:16px; overflow:hidden; }}
+.kpi-crest .score-badge img{{ max-height:100%; max-width:60%; height:auto; width:auto; object-fit:contain; }}
+.kpi-crest .score-badge .meta{{ flex:1 1 0; min-width:0; }}
+
+.kpi-actions{{
+  height: var(--kpi-actions-h);
+  display:flex; gap:12px; align-items:center; justify-content:center; flex-wrap:wrap;
+}}
+.kpi-actions.placeholder{{ visibility:hidden; }}
+
+/* If buttons wrap on small screens, give a bit more strip height */
+@media (max-width: 1100px){{
+  :root {{ --kpi-actions-h: 72px; }}
+}}
+
+
 </style>
 """
+ui.head_content(ui.tags.script("""
+(function(){
+  function sync(){
+    const real = document.querySelector('.kpi-card .kpi-actions:not(.placeholder)');
+    if(!real) return;
+    const h = Math.ceil(real.getBoundingClientRect().height);
+    document.documentElement.style.setProperty('--kpi-actions-h', h+'px');
+  }
+  window.addEventListener('load', sync);
+  window.addEventListener('resize', sync);
+  const ro = new ResizeObserver(sync);
+  document.addEventListener('DOMContentLoaded', () => {
+    const real = document.querySelector('.kpi-card .kpi-actions:not(.placeholder)');
+    if(real) ro.observe(real);
+  });
+})();
+""")))
+
 
 
 

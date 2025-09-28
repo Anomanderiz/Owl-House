@@ -538,7 +538,7 @@ aside.sidebar .card {{ background: transparent; }}
 .kpi-card{{
   display:flex; flex-direction:column; height:100%;
   gap:12px;
-}
+}}
 .kpi-card > .tiers{{ margin-top:4px; }}
 
 /* The crest area expands to fill remaining space */

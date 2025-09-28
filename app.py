@@ -569,7 +569,7 @@ def crest_html(label: str, value: int, b64: str, dom_id: str) -> ui.HTML:
 # Tiers HTML
 RENOWN_TIERS_HTML = f"""
 <div class="tiers">
-  <h4>Veil-Fame perks — subtle favours while the mask stays on</h4>
+  <h4>Veiled Fame — small favours from the smallfolk</h4>
   <table class="tier-table">
     <tr><th>Tier</th><th>Threshold</th><th>Perks (quiet, deniable)</th></tr>
     <tr><td class="tt-badge tt-gold">R1</td><td>5</td><td><b>Street Signals</b>: advantage to glean rumours; hand-signs recognised across working wards.</td></tr>
@@ -584,7 +584,7 @@ RENOWN_TIERS_HTML = f"""
 
 NOTOR_TIERS_HTML = f"""
 <div class="tiers">
-  <h4>City Heat — escalating responses without unmasking you</h4>
+  <h4>City Heat — escalating responses to vigilantism</h4>
   <table class="tier-table">
     <tr><th>Band</th><th>Score</th><th>City response</th></tr>
     <tr><td class="tt-badge tt-red">N0 — Cold</td><td>0–4</td><td>Nothing special.</td></tr>

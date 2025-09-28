@@ -153,63 +153,55 @@ def mission_count(df: pd.DataFrame) -> int:
     return int(mask.sum())
 
 # ---------- Points award functions ----------
-# ---------- Tier thresholds ----------
-RENOWN_THRESH = [5, 10, 15, 20, 25, 30]
+# ---------- Points Engine (drop-in replace) ----------
+import math
+
+# Tier thresholds (points) — keep if you use "points to next tier" on crests
+RENOWN_THRESH    = [5, 10, 15, 20, 25, 30]
 NOTORIETY_THRESH = [5, 10, 15, 20, 25, 30]
 
+# Arc flavour multipliers (tempered)
+RENOWN_ARC_MULT = {
+    "Help the Poor":   1.00,
+    "Sabotage Evil":   1.15,
+    "Expose Corruption": 1.30,
+}
+RISK_ARC_MULT = {
+    "Help the Poor":   0.80,
+    "Sabotage Evil":   1.10,
+    "Expose Corruption": 1.30,
+}
+
 def current_tier(total: float, thresholds: list[int]) -> int:
+    """0-based count of thresholds met."""
     t = 0
     for th in thresholds:
         if total >= th: t += 1
         else: break
     return t
 
-def points_to_next(total: float, thresholds: list[int]) -> tuple[float, int|None]:
-    for i, th in enumerate(thresholds, start=1):
-        if total < th:
-            return round(th - total, 2), i
-    return 0.0, None
-
-def mission_count(df: pd.DataFrame) -> int:
-    if df.empty or "archetype" not in df.columns: return 0
-    mask = df["archetype"].isin(["Help the Poor","Sabotage Evil","Expose Corruption"])
-    return int(mask.sum())
-
-# ---------- Inputs → OQM / success bucket ----------
-def oqm_from_inputs(arc: str, input) -> int:
-    if arc == "Help the Poor":
-        return (1 if input.plan_help() else 0)
-    if arc == "Sabotage Evil":
-        return (1 if input.plan_sab() else 0) + (-1 if input.rushed() else 0)
-    # Expose
-    return (1 if input.proof() else 0) + (-1 if input.reused() else 0)
-
-def eb_bucket(margin: int, nat20: bool) -> int:
-    # Same feel as your old EB: 0,1,2,3 (nat20 forces the top bucket)
-    if nat20: return 3
-    if margin >= 5: return 2
-    if margin >= 1: return 1
-    return 0
-
-# ---------- Arc multipliers ----------
-RENOWN_ARC_MULT = {"Help the Poor":1.00, "Sabotage Evil":1.15, "Expose Corruption":1.30}
-RISK_ARC_MULT   = {"Help the Poor":0.80, "Sabotage Evil":1.10, "Expose Corruption":1.30}
-
-# ---------- Main award functions (LOG curve + all modifiers) ----------
 def renown_points_from(*, gold: float, missions: int, arc: str,
-                       impact: int|None, exposure: int|None, oqm: int, eb: int,
-                       nat20: bool=False, nat1: bool=False) -> float:
-    # Gold has diminishing returns; later missions harden the curve.
-    base = 2.0 * math.log1p(max(0.0, gold) / (50.0 + 10.0*max(0, missions)))
+                       impact: int | None, exposure: int | None,
+                       oqm: int, eb: int,  # oqm: net Ops; eb: result bucket −3..+3
+                       nat20: bool = False, nat1: bool = False) -> float:
+    """
+    Gold: diminishing returns hardened by mission count.
+    Ops: minor effect (+3% per Ops).
+    Result (EB): moderate (+4% per step, −3..+3).
+    Impact/Exposure: moderate, only on their archetypes.
+    Crits: +0.5 RP on nat20, −0.3 on nat1.
+    """
+    base = 2.0 * math.log1p(max(0.0, gold) / (50.0 + 10.0 * max(0, missions)))
 
-    # Behaviour mods
-    oqm_mult = 1.0 + 0.06 * oqm                         # good ops boost renown
-    eb_mult  = 1.0 + 0.05 * eb                          # tidy execution bumps renown
+    # minor Ops, moderate Result
+    oqm_mult = 1.0 + 0.03 * oqm
+    eb_mult  = 1.0 + 0.04 * eb
 
+    # archetype-specific spice
     if arc == "Sabotage Evil":
-        eff_mult = 1.0 + 0.07 * ((impact or 3) - 3)     # impact 1..5 → ±0.14 swing
+        eff_mult = 1.0 + 0.07 * (((impact or 3) - 3))      # impact 1..5 → ±0.14
     elif arc == "Expose Corruption":
-        eff_mult = 1.0 + 0.10 * ((exposure or 3) - 3)   # exposure leans stronger for fame
+        eff_mult = 1.0 + 0.10 * (((exposure or 3) - 3))    # exposure 1..5 → ±0.20
     else:
         eff_mult = 1.0
 
@@ -219,21 +211,29 @@ def renown_points_from(*, gold: float, missions: int, arc: str,
     return round(max(0.0, pts), 2)
 
 def notoriety_points_from(*, gold: float, missions: int, arc: str,
-                          impact: int|None, exposure: int|None, oqm: int, eb: int,
+                          impact: int | None, exposure: int | None,
+                          oqm: int, eb: int,
                           current_notor_total: float,
-                          nat20: bool=False, nat1: bool=False) -> float:
-    base = 1.6 * math.log1p(max(0.0, gold) / (80.0 + 12.0*max(0, missions)))
+                          nat20: bool = False, nat1: bool = False) -> float:
+    """
+    Mirrors renown but tuned ‘hotter’ and damped by good ops.
+    Tier feedback: +8% per current notoriety tier.
+    Ops: minor reduction (−3% per Ops, floored at −15%).
+    Result (EB): moderate reduction (−3% per step, floored at −20%).
+    Crits: −0.3 NP on nat20, +0.5 on nat1.
+    """
+    base = 1.6 * math.log1p(max(0.0, gold) / (80.0 + 12.0 * max(0, missions)))
     tier = current_tier(current_notor_total, NOTORIETY_THRESH)
-    heat_scale = 1.0 + 0.08 * tier                     # city learns patterns
+    heat_scale = 1.0 + 0.08 * tier
 
-    # Ops quality: good ops damp heat, sloppy ops raise it
-    oqm_mult = max(0.70, 1.0 - 0.04 * oqm)
-    eb_mult  = max(0.80, 1.0 - 0.03 * eb)              # clean win → slightly less heat
+    # minor dampers
+    oqm_mult = max(0.85, 1.0 - 0.03 * oqm)
+    eb_mult  = max(0.80, 1.0 - 0.03 * eb)
 
     if arc == "Sabotage Evil":
-        eff_mult = 1.0 + 0.09 * ((impact or 3) - 3)    # higher impact draws attention
+        eff_mult = 1.0 + 0.09 * (((impact or 3) - 3))      # ±0.18
     elif arc == "Expose Corruption":
-        eff_mult = 1.0 + 0.12 * ((exposure or 3) - 3)  # exposure is spicy for heat
+        eff_mult = 1.0 + 0.12 * (((exposure or 3) - 3))    # ±0.24
     else:
         eff_mult = 1.0
 
@@ -243,14 +243,14 @@ def notoriety_points_from(*, gold: float, missions: int, arc: str,
     return round(max(0.0, pts), 2)
 
 
+
 def clamp(v, lo, hi): return max(lo, min(hi, v))
 def heat_multiplier(n): return 1.5 if n>=20 else (1.25 if n>=10 else 1.0)
 
 def compute_BI(arc: str, inputs: Dict[str,int]) -> int:
     if arc=="Help the Poor":
-        spend=inputs.get("spend",0); hh=inputs.get("households",0)
+        spend=inputs.get("spend",0)
         sb = 1 if spend<25 else 2 if spend<50 else 3 if spend<100 else 4 if spend<200 else 5
-        hb = 1 if hh<10   else 2 if hh<25   else 3 if hh<50   else 4 if hh<100  else 5
         return max(sb,hb)
     if arc=="Sabotage Evil":
         return inputs.get("impact_level",1)
@@ -309,19 +309,6 @@ def projected_points_line(df: pd.DataFrame, arc: str, gold: float,
                                impact=impact, exposure=exposure, oqm=oqm, eb=eb,
                                current_notor_total=notor_total, nat20=nat20, nat1=nat1)
     return f"Projected Renown Points: {rp:.2f} • Projected Notoriety Points: {np:.2f} (Gold {gold:.0f}, Missions {M})"
-
-def _arc_params():
-    arc  = input.arc()
-    gold = float(input.spend())
-    eb   = eb_bucket(int(input.margin()), input.nat20())
-    if arc == "Sabotage Evil":
-        impact, exposure = int(input.impact()), None
-    elif arc == "Expose Corruption":
-        impact, exposure = None, int(input.expose())
-    else:
-        impact, exposure = None, None
-    oqm = oqm_from_inputs(arc, input)
-    return arc, gold, eb, impact, exposure, oqm
 
 
 # ------------------------------ Reactive State ------------------------------
@@ -626,23 +613,34 @@ sidebar = ui.sidebar(
 # Tabs
 tab_mission = ui.nav_panel(
     "🗺️ Mission Generator",
-    ui.input_radio_buttons("arc", "Archetype", ["Help the Poor","Sabotage Evil","Expose Corruption"], inline=True),
+    ui.input_radio_buttons("arc", "Archetype",
+    ["Help the Poor","Sabotage Evil","Expose Corruption"], inline=True),
     ui.layout_columns(
-        ui.card(ui.input_numeric("spend", "Gold Spent", 40, min=0, step=5), ui.input_numeric("households","Households Aided", 25, min=0, step=5), ui.input_checkbox("plan_help","Solid Plan (+1 OQM)", True), id="help_inputs"),
-        ui.card(ui.input_slider("impact","Impact Level (1→5)", 1, 5, 3), ui.input_checkbox("plan_sab","Inside Contact (+1 OQM)", False), ui.input_checkbox("rushed","Rushed/Loud (−1 OQM)", False), id="sab_inputs"),
-        ui.card(ui.input_slider("expose","Exposure Level (1→5)", 1, 5, 3), ui.input_checkbox("proof","Hard Proof / Magical Corroboration (+1 OQM)", False), ui.input_checkbox("reused","Reused Signature (−1 OQM)", False), id="exp_inputs"),
+        ui.card(
+            ui.input_numeric("spend", "Gold Spent", 40, min=0, step=5),
+            ui.input_checkbox("plan_help", "Ops Prep (+1 Ops)", True),
+            id="help_inputs"
+        ),
+        ui.card(
+            ui.input_slider("impact","Impact Level (1→5)", 1, 5, 3),
+            ui.input_checkbox("plan_sab","Inside Contact (+1 Ops)", False),
+            ui.input_checkbox("rushed","Rushed/Loud (−1 Ops)", False),
+            id="sab_inputs"
+        ),
+        ui.card(
+            ui.input_slider("expose","Exposure Level (1→5)", 1, 5, 3),
+            ui.input_checkbox("proof","Hard Proof / Magical Corroboration (+1 Ops)", False),
+            ui.input_checkbox("reused","Reused Signature (−1 Ops)", False),
+            id="exp_inputs"
+        ),
     ),
     ui.hr(),
-    ui.h4("Execution"),
+    ui.h4("Resolution"),
     ui.layout_columns(
-        ui.input_numeric("margin","Success Margin", 2, min=0, max=20),
+        ui.input_slider("roll", "Result (0–30)", 0, 30, 15),
         ui.input_checkbox("nat20","Natural 20", False),
         ui.input_checkbox("nat1","Critical botch", False),
     ),
-    ui.output_text("base_summary"),
-    ui.output_text("proj_summary"),
-    ui.input_action_button("queue", "Queue Mission → Resolve & Log", class_="btn btn-primary"),
-)
 
 tab_resolve = ui.nav_panel(
     "🎯 Resolve & Log",
@@ -704,6 +702,26 @@ def server(input, output, session):
     @reactive.Effect
     def _ward():
         ward_focus.set(input.ward())
+
+    def _eb_from_roll(roll: int, nat20: bool) -> int:
+    if nat20:
+        return 3
+    # map 0..30 to -3..+3 in 5-pt steps; clamp
+    return max(-3, min(3, int(round((roll - 15) / 5))))
+
+    def _arc_params():
+        arc  = input.arc()
+        gold = float(input.spend())
+        roll = int(input.roll())
+        eb   = _eb_from_roll(roll, input.nat20())
+        if arc == "Sabotage Evil":
+            impact, exposure = int(input.impact()), None
+        elif arc == "Expose Corruption":
+            impact, exposure = None, int(input.expose())
+        else:
+            impact, exposure = None, None
+        oqm = oqm_from_inputs(arc, input)
+        return arc, gold, eb, impact, exposure, oqm
 
     # Crest values → badges
     @output
@@ -801,6 +819,14 @@ def server(input, output, session):
         return projected_points_line(ledger_df.get(), arc, gold, input.nat20(), input.nat1(),
                                      notoriety.get(), impact, exposure, oqm, eb)
 
+    @output
+    @render.text
+    def proj_summary():
+        arc, gold, eb, impact, exposure, oqm = _arc_params()
+        return projected_points_line(
+            ledger_df.get(), arc, gold, input.nat20(), input.nat1(),
+            notoriety.get(), impact, exposure, oqm, eb
+        )
 
     # Queue mission
     @reactive.Effect

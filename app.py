@@ -534,6 +534,56 @@ aside.sidebar .card {{ background: transparent; }}
   cursor: pointer;
 }}
 
+/* --- KPI card layout --- */
+.kpi-card{{
+  display:flex; flex-direction:column; height:100%;
+  gap:12px;
+}
+.kpi-card > .tiers{{ margin-top:4px; }}
+
+/* The crest area expands to fill remaining space */
+.kpi-crest{{
+  flex:1 1 auto;
+  min-height:220px;          /* sensible floor on tiny screens */
+  display:flex; align-items:center;
+}}
+
+/* Scale the crest *inside* that area */
+.kpi-crest .score-badge{{
+  height:100%;
+  display:flex; align-items:center; gap:16px;
+}}
+.kpi-crest .score-badge img{{
+  height:100%; width:auto; max-height:100%; object-fit:contain;
+  filter: drop-shadow(0 6px 12px rgba(0,0,0,.35));
+}}
+
+/* Text scales with available height but stays readable */
+.kpi-crest .score-badge .label{{ 
+  font-size: clamp(12px, 1.8vh, 18px);
+  opacity:.95; letter-spacing:.4px; color:var(--ivory);
+}}
+.kpi-crest .score-badge .val{{
+  font-size: clamp(28px, 8vh, 96px);
+  font-weight:800; line-height:1.05; color:var(--ivory);
+  text-shadow: 0 2px 6px rgba(0,0,0,.55);
+}}
+.kpi-crest .score-badge .sub{{
+  font-size: clamp(11px, 1.6vh, 14px);
+  color: var(--gold);
+}}
+
+/* Keep the click-overlay invisible on hover (no grey tint) */
+.kpi-crest .ghost-btn,
+.kpi-crest .ghost-btn:hover,
+.kpi-crest .ghost-btn:active,
+.kpi-crest .ghost-btn:focus{{
+  position:absolute; inset:0;
+  background:transparent!important; border:none!important;
+  box-shadow:none!important; outline:none!important;
+}}
+
+
 /* ---------- Wheel ---------- */
 #wheel_wrap {{ position: relative; width: 600px; margin: 0 auto; }}
 #wheel_img {{ width: 100%; height: 100%; border-radius: 50%; box-shadow: 0 10px 40px rgba(0,0,0,.55); background: radial-gradient(closest-side, rgba(255,255,255,0.06), transparent); }}
@@ -709,26 +759,31 @@ tab_ledger = ui.nav_panel(
 
 # Top row: KPI crests + ward select + heat buttons
 kpi_row = ui.layout_columns(
-    ui.card(ui.output_ui("renown_badge"), ui.output_ui("_tiers_renown")),
-    ui.card(
-        ui.output_ui("notor_badge"), ui.output_ui("_tiers_notor"),
+    ui.card(  # Renown
+        ui.output_ui("renown_badge"),
+        ui.output_ui("_tiers_renown"),
+        class_="kpi-card",   # ← add
+    ),
+    ui.card(  # Notoriety
+        ui.output_ui("notor_badge"),
+        ui.output_ui("_tiers_notor"),
         ui.layout_columns(
             ui.input_action_button("lie_low", "Lie Low (−1/−2 Heat)"),
             ui.input_action_button("proxy_charity", "Proxy Charity (−1 Heat)"),
-        )
+        ),
+        class_="kpi-card",   # ← add
     ),
-    ui.card(
+    ui.card(  # Ward stays as-is
         ui.div(
-            ui.input_select(
-                "ward", "Active Ward",
-                choices=["Dock","Field","South","North","Castle","Trades","Sea"],
-                selected="Dock"
-            ),
+            ui.input_select("ward", "Active Ward",
+                            choices=["Dock","Field","South","North","Castle","Trades","Sea"],
+                            selected="Dock"),
             ui.output_ui("ward_preview"),
             class_="ward-card"
         )
-    )
-    )
+    ),
+)
+
 
 
 app_ui = ui.page_sidebar(
@@ -824,18 +879,18 @@ def server(input, output, session):
         to_next, nxt = points_to_next(total, RENOWN_THRESH)
         sub = f'{to_next:.1f} pts to R{nxt}' if nxt else 'Max tier'
         return ui.div(
+            {"class": "kpi-crest", "style": "position:relative;"},
             ui.HTML(f"""
               <div class="score-badge">
-                <img src="data:image/png;base64,{RENOWN_B64}" alt="Renown">
+                <img src="data:image/png;base64,{RENOWN_B64}" alt="Renown" />
                 <div class="meta">
                   <div class="label">Renown</div>
                   <div class="val">{total:.1f}</div>
-                  <div class="sub" style="font-size:12px;color:var(--gold);opacity:.95;">{sub}</div>
+                  <div class="sub">{sub}</div>
                 </div>
               </div>
             """),
             ui.input_action_button("renown_clicked", "", class_="ghost-btn"),
-            style="position:relative; display:inline-block;"
         )
 
 
@@ -857,18 +912,18 @@ def server(input, output, session):
         to_next, nxt = points_to_next(total, NOTORIETY_THRESH)
         sub = f'{to_next:.1f} pts to N{nxt}' if nxt else 'Max tier'
         return ui.div(
+            {"class": "kpi-crest", "style": "position:relative;"},
             ui.HTML(f"""
               <div class="score-badge">
-                <img src="data:image/png;base64,{NOTOR_B64}" alt="Notoriety">
+                <img src="data:image/png;base64,{NOTOR_B64}" alt="Notoriety" />
                 <div class="meta">
                   <div class="label">Notoriety</div>
                   <div class="val">{total:.1f}</div>
-                  <div class="sub" style="font-size:12px;color:var(--heat-red);opacity:.95;">{sub}</div>
+                  <div class="sub">{sub}</div>
                 </div>
               </div>
             """),
             ui.input_action_button("notor_clicked", "", class_="ghost-btn"),
-            style="position:relative; display:inline-block;"
         )
 
 

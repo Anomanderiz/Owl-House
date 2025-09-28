@@ -502,18 +502,16 @@ kpi_row = ui.layout_columns(
 
 app_ui = ui.page_sidebar(
     sidebar,
-    ui.tags.head(ui.HTML(GLOBAL_CSS)),
-    # (no CREST_JS here)
+    ui.head_content(ui.HTML(GLOBAL_CSS)),  # ← use head_content for 1.5
     ui.div(
         ui.h2(APP_TITLE),
         kpi_row,
-        ui.navset_tab(
-            tab_mission, tab_resolve, tab_wheel, tab_ledger
-        ),
+        ui.navset_tab(tab_mission, tab_resolve, tab_wheel, tab_ledger),
         id="app-root", class_="goldrim"
     ),
     title=APP_TITLE
 )
+
 
 # ------------------------------ Server ------------------------------
 
@@ -541,6 +539,17 @@ def server(input, output, session):
             ui.input_action_button("renown_clicked", "", class_="ghost-btn"),
             style="position:relative; display:inline-block;"
         )
+
+    @reactive.Effect
+    @reactive.event(input.renown_clicked)
+    def _toggle_r():
+        show_renown.set(not show_renown.get())
+
+    @reactive.Effect
+    @reactive.event(input.notor_clicked)
+    def _toggle_n():
+        show_notor.set(not show_notor.get())
+
 
     @output
     @render.ui
@@ -745,21 +754,35 @@ def server(input, output, session):
     @output
     @render.ui
     def wheel_ui():
-        opts = _load_options()
-        wheel_options.set(opts)
-        size = 600
-        b64 = img_b64(draw_wheel([str(i+1) for i in range(len(opts))], size=size))
+        # Load/remember options (with fallback if JSON is missing/empty)
+        def _safe_opts():
+            tpath = HIGH_TABLE if notoriety.get() >= 10 else LOW_TABLE
+            try:
+                with open(tpath, "r") as f:
+                    data = [str(x) for x in json.load(f)]
+                return data if data else [f"Complication {i}" for i in range(1, 13)]
+            except Exception:
+                return [f"Complication {i}" for i in range(1, 13)]
 
+        opts = _safe_opts()
+        wheel_options.set(opts)
+
+        size = 600
+        b64 = img_b64(draw_wheel([str(i + 1) for i in range(len(opts))], size=size))
         angle = last_angle.get()
         spinning = "spinning" if spin_token.get() else ""
 
-        return ui.HTML(f"""
-          <div id="wheel_wrap" style="height:{size}px;">
-            <div id="pointer"></div>
-            <img id="wheel_img" class="{spinning}" src="data:image/png;base64,{b64}"
-                 style="--spin-deg:{angle}deg" />
-          </div>
-        """) + ui.input_action_button("spin_clicked", "SPIN!", class_="spin-btn")
+        # One container with both the image and the button as children.
+        return ui.div(
+            {"id": "wheel_wrap", "style": f"position:relative;width:{size}px;height:{size}px;margin:0 auto;"},
+            ui.HTML(f"""
+              <div id="pointer"></div>
+              <img id="wheel_img" class="{spinning}" src="data:image/png;base64,{b64}"
+                   style="--spin-deg:{angle}deg;width:100%;height:100%;border-radius:50%;" />
+            """),
+            ui.input_action_button("spin_clicked", "SPIN!", class_="spin-btn")
+        )
+
 
     @reactive.Effect
     @reactive.event(input.spin_clicked)
@@ -770,8 +793,11 @@ def server(input, output, session):
         idx = random.randrange(n)
         selected_index.set(idx)
         seg = 360 / n
+
+        # Guarantee a new animation cycle
+        spin_token.set(None)
         last_angle.set(random.randint(4, 7) * 360 + (idx + 0.5) * seg)
-        spin_token.set(dt.datetime.now().isoformat())  # force a fresh animation
+        spin_token.set(dt.datetime.now().isoformat())
 
         # Log a journal line
         row = [dt.datetime.now().isoformat(timespec="seconds"),
@@ -779,7 +805,6 @@ def server(input, output, session):
         df = ledger_df.get().copy()
         df.loc[len(df)] = row
         ledger_df.set(df)
-
 
     @output
     @render.ui

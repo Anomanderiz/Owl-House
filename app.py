@@ -729,6 +729,7 @@ kpi_row = ui.layout_columns(
             class_="ward-card"
         )
     )
+    )
 
 
 app_ui = ui.page_sidebar(

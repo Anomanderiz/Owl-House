@@ -762,23 +762,31 @@ tab_ledger = ui.nav_panel(
 
 # Top row: KPI crests + ward select + heat buttons
 kpi_row = ui.layout_columns(
-    ui.card(  # Renown
+    # --- Renown ---
+    ui.card(
         ui.output_ui("renown_badge"),
+        # invisible spacer that always matches the real buttons' height
+        ui.div({"class": "kpi-actions placeholder"}, ui.HTML("&nbsp;")),
         ui.output_ui("_tiers_renown"),
-        class_="kpi-card",   # ← add
+        class_="kpi-card",
     ),
-    ui.card(  # Notoriety
+
+    # --- Notoriety ---
+    ui.card(
         ui.output_ui("notor_badge"),
-        ui.output_ui("_tiers_notor"),
-        ui.layout_columns(
+        ui.div(  # real action row
             ui.input_action_button("lie_low", "Lie Low (−1/−2 Heat)"),
             ui.input_action_button("proxy_charity", "Proxy Charity (−1 Heat)"),
+            class_="kpi-actions",
         ),
-        class_="kpi-card",   # ← add
+        ui.output_ui("_tiers_notor"),
+        class_="kpi-card",
     ),
-    ui.card(  # Ward stays as-is
+
+    # --- Ward (unchanged) ---
+    ui.card(
         ui.div(
-            ui.input_select("ward", "Active Ward",
+            ui.input_select("ward","Active Ward",
                             choices=["Dock","Field","South","North","Castle","Trades","Sea"],
                             selected="Dock"),
             ui.output_ui("ward_preview"),
@@ -786,6 +794,7 @@ kpi_row = ui.layout_columns(
         )
     ),
 )
+
 
 
 

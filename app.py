@@ -47,6 +47,19 @@ RENOWN_B64 = _b64_from_file(RENOWN_IMG_CANDIDATES)
 NOTOR_B64  = _b64_from_file(NOTOR_IMG_CANDIDATES)
 MURAL_B64  = _b64_from_file(MURAL_CANDIDATES)
 
+from functools import lru_cache
+
+@lru_cache(maxsize=32)
+def ward_image_b64(ward: str) -> str:
+    """Return base64 PNG for the selected ward (tries a few common filename variants)."""
+    safe = (ward or "").strip().replace(" ", "_")
+    return _b64_from_file([
+        f"{ASSETS_DIR}/{safe}_Ward.png",
+        f"{ASSETS_DIR}/{safe}_ward.png",
+        f"{ASSETS_DIR}/{safe}.png",
+        f"{ASSETS_DIR}/{safe}-Ward.png",
+    ])
+
 # ------------------------------ Google Sheets (optional) ------------------------------
 
 # Environment variables (set these in Posit Cloud -> Environment):
@@ -549,6 +562,9 @@ aside.sidebar .card {{ background: transparent; }}
 .tt-badge {{ font-weight: 800; }}
 .tt-gold {{ color: var(--gold); }}      /* Renown labels */
 .tt-red  {{ color: var(--heat-red); }}  /* Notoriety labels */
+
+.ward-card{display:flex;flex-direction:column;gap:10px}
+.ward-preview img{display:block;width:100%;height:auto}
 </style>
 """
 
@@ -702,9 +718,18 @@ kpi_row = ui.layout_columns(
             ui.input_action_button("proxy_charity", "Proxy Charity (−1 Heat)"),
         )
     ),
-    ui.card(ui.input_select("ward","Active Ward",
-           choices=["Dock","Field","South","North","Castle","Trades","Sea"], selected="Dock"))
-)
+    ui.card(
+        ui.div(
+            ui.input_select(
+                "ward", "Active Ward",
+                choices=["Dock","Field","South","North","Castle","Trades","Sea"],
+                selected="Dock"
+            ),
+            ui.output_ui("ward_preview"),
+            class_="ward-card"
+        )
+    )
+
 
 app_ui = ui.page_sidebar(
     sidebar,
@@ -726,6 +751,27 @@ def server(input, output, session):
     @reactive.Effect
     def _ward():
         ward_focus.set(input.ward())
+
+    @output
+    @render.ui
+    def ward_preview():
+        w = input.ward()
+        b64 = ward_image_b64(w)
+        if not b64:
+            # No asset found: show nothing (or swap this div for a small note if you prefer)
+            return ui.HTML("")
+        return ui.HTML(
+            f"""
+            <div class="ward-preview">
+              <img alt="{w} Ward"
+                   src="data:image/png;base64,{b64}"
+                   style="display:block;width:100%;height:auto;border-radius:12px;
+                          border:1px solid var(--gold);
+                          box-shadow:0 6px 18px rgba(0,0,0,.35);" />
+            </div>
+            """
+        )
+
 
     def _eb_from_roll(roll: int, nat20: bool) -> int:
         if nat20:

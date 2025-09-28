@@ -199,6 +199,7 @@ selected_index   = reactive.Value(None)  # type: ignore
 wheel_options    = reactive.Value([])    # list[str]
 
 queued_mission   = reactive.Value(None)  # dict or None
+spin_token = reactive.Value(None)  # bump on each spin to re-animate
 
 # Bootstrap from Sheets (if configured) on first session
 def _bootstrap_from_sheets():
@@ -214,12 +215,47 @@ def _bootstrap_from_sheets():
 
 _bootstrap_from_sheets()
 
+# --- Palette from background image ---
+def _first_existing(paths):
+    for p in paths:
+        if os.path.exists(p):
+            return p
+    return None
+
+def _avg_rgb(path: str) -> tuple[int, int, int]:
+    try:
+        im = Image.open(path).convert("RGB").resize((64, 64))
+        arr = np.array(im).reshape(-1, 3)
+        r, g, b = arr.mean(axis=0)
+        return int(r), int(g), int(b)
+    except Exception:
+        return (32, 42, 64)  # sane dark fallback
+
+def _hex(rgb): return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+def _lighten(rgb, f):  # f in [0..1]
+    return tuple(int(min(255, c + (255 - c) * f)) for c in rgb)
+def _darken(rgb, f):
+    return tuple(int(max(0, c * (1 - f))) for c in rgb)
+
+_BG_PATH = _first_existing(BG_CANDIDATES)
+_ACCENT_RGB = _avg_rgb(_BG_PATH) if _BG_PATH else (32, 42, 64)
+ACCENT = _hex(_ACCENT_RGB)
+ACCENT_LIGHT = _hex(_lighten(_ACCENT_RGB, 0.35))
+ACCENT_DARK  = _hex(_darken(_ACCENT_RGB, 0.25))
+
 # ------------------------------ UI ------------------------------
 
-# Global CSS (glass, gold rims, hide headers, background image)
 GLOBAL_CSS = f"""
 <style>
 @import url("https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English+SC&display=swap");
+
+:root {{
+  --accent: {ACCENT};
+  --accent-light: {ACCENT_LIGHT};
+  --accent-dark: {ACCENT_DARK};
+  --ivory: {IVORY};
+  --gold: {GOLD};
+}}
 
 html, body {{
   height: 100%;
@@ -227,59 +263,74 @@ html, body {{
   background-size: cover;
 }}
 #app-root {{
-  background: rgba(12,17,40,0.62);
+  background: linear-gradient(180deg, rgba(0,0,0,0.32), rgba(0,0,0,0.58)) ;
   backdrop-filter: blur(14px) saturate(1.15);
   -webkit-backdrop-filter: blur(14px) saturate(1.15);
-  border: 1px solid rgba(208,168,92,0.22);
+  border: 1px solid var(--accent-light);
   border-radius: 24px;
   box-shadow: 0 20px 50px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06);
   padding: 1.0rem 1.2rem;
   margin-top: .6rem;
 }}
-h1, h2, h3, h4 {{ color: {IVORY}; text-shadow: 0 1px 0 rgba(0,0,0,0.35); }}
+h1, h2, h3, h4 {{ color: var(--ivory); text-shadow: 0 1px 0 rgba(0,0,0,0.35); }}
 
 .goldrim {{
-  border: 1px solid rgba(208,168,92,.35) !important;
+  border: 1px solid var(--accent-light) !important;
   border-radius: 14px !important;
   box-shadow: 0 10px 24px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.06) !important;
-  background: rgba(14,18,38,.60);
+  background: rgba(10,14,28,0.60);
 }}
 
+.nav-tabs .nav-link {{ color: var(--accent-light); }}
+.nav-tabs .nav-link.active {{
+  color: #fff;
+  background-color: var(--accent-dark);
+  border-color: var(--accent-dark) var(--accent-dark) transparent;
+}}
+.btn-primary {{
+  background-color: var(--accent);
+  border-color: var(--accent-dark);
+}}
+.btn-secondary {{
+  background-color: var(--accent-dark);
+  border-color: var(--accent);
+}}
+a, .tt-badge {{ color: var(--accent-light); }}
+
 .welcome {{
-  border: 1px solid rgba(208,168,92,0.35);
+  border: 1px solid var(--accent-light);
   border-radius: 18px;
   padding: 1rem 1.1rem;
   background: rgba(14,18,38,0.70);
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04), 0 10px 30px rgba(0,0,0,0.35);
 }}
-.welcome h3 {{ font-family: "Cinzel Decorative", serif; color: {IVORY}; margin: 0 0 .35rem 0; }}
-.welcome p {{ font-family: "IM Fell English SC", serif; font-size: 1.05rem; line-height: 1.3; color: {IVORY}; opacity: .92; }}
+.welcome h3 {{ font-family: "Cinzel Decorative", serif; color: var(--ivory); margin: 0 0 .35rem 0; }}
+.welcome p {{ font-family: "IM Fell English SC", serif; font-size: 1.05rem; line-height: 1.3; color: var(--ivory); opacity: .92; }}
 
 .score-badge {{
   position: relative; display: inline-flex; align-items: center; gap: 14px;
-  padding: 6px 0; background: transparent; border: none; cursor: pointer; user-select: none;
+  padding: 6px 0; background: transparent; border: none; user-select: none;
 }}
 .score-badge img {{
-  width: 250px; height: 250px; object-fit: contain;
+  width: 220px; height: 220px; object-fit: contain;
   filter: drop-shadow(0 6px 12px rgba(0,0,0,.35));
 }}
-.score-badge .label {{ font-size: 15px; color: {IVORY}; opacity: .85; letter-spacing: .4px; }}
-.score-badge .val   {{ font-size: 56px; color: {IVORY}; font-weight: 800; line-height: 1.05; text-shadow: 0 1px 0 rgba(0,0,0,.35); }}
-@media (max-width: 900px){{
-  .score-badge img{{ width: 72px; height: 72px; }}
-  .score-badge .val{{ font-size: 42px; }}
+.score-badge .label {{ font-size: 15px; color: var(--ivory); opacity: .9; letter-spacing: .4px; }}
+.score-badge .val   {{ font-size: 58px; color: var(--ivory); font-weight: 800; line-height: 1.05; text-shadow: 0 2px 6px rgba(0,0,0,.55); }}
+
+.ghost-btn {{
+  position:absolute; inset:0; background:transparent; border:none; padding:0; cursor:pointer;
 }}
 
 .tiers {{
   margin-top: 10px; padding: 14px 16px; border-radius: 16px;
-  background: rgba(16,24,32,.55); border: 1px solid rgba(208,168,92,.45);
+  background: rgba(16,24,32,.55); border: 1px solid var(--accent-light);
   box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
-  color: {IVORY};
+  color: var(--ivory);
 }}
-.tier-table {{ width: 100%; border-collapse: collapse; color: {IVORY}; }}
+.tier-table {{ width: 100%; border-collapse: collapse; color: var(--ivory); }}
 .tier-table th, .tier-table td {{ border-top: 1px solid rgba(208,168,92,.25); padding: 8px 10px; vertical-align: top; }}
 .tier-table tr:first-child th, .tier-table tr:first-child td {{ border-top: none; }}
-.tt-badge {{ color: {GOLD}; font-weight: 700; }}
 
 #wheel_wrap {{ position: relative; width: 600px; margin: 0 auto; }}
 #wheel_img {{
@@ -290,23 +341,36 @@ h1, h2, h3, h4 {{ color: {IVORY}; text-shadow: 0 1px 0 rgba(0,0,0,0.35); }}
 #pointer {{
   position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
   width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent;
-  border-bottom: 26px solid {GOLD}; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4));
+  border-bottom: 26px solid var(--gold); filter: drop-shadow(0 2px 2px rgba(0,0,0,.4));
+}}
+
+.spin-btn {{
+  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  min-width: 120px; height: 120px; border-radius: 60px;
+  display:grid; place-items:center; font-weight:700; letter-spacing:.5px; text-transform:uppercase;
+  border:1px solid var(--accent-light);
+  background:linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+  backdrop-filter: blur(8px) saturate(1.1); -webkit-backdrop-filter: blur(8px) saturate(1.1);
+  box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
+  color: var(--ivory);
 }}
 
 .result-card {{
   max-width: 900px; margin: 18px auto 0; padding: 18px 20px;
   border-radius: 14px;
   background: rgba(16,24,32,0.55);
-  border: 1px solid rgba(208,168,92,0.45);
+  border: 1px solid var(--accent-light);
   box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,0.06);
-  backdrop-filter: blur(6px) saturate(1.05);
-  -webkit-backdrop-filter: blur(6px) saturate(1.05);
+  backdrop-filter: blur(6px) saturate(1.05); -webkit-backdrop-filter: blur(6px) saturate(1.05);
   animation: fadein .35s ease-out;
-  color: {IVORY};
+  color: var(--ivory);
 }}
-.result-number {{ font-size: 13px; letter-spacing: .4px; color: {GOLD}; text-transform: uppercase; opacity: .9; margin-bottom: 6px; }}
+.result-number {{ font-size: 13px; letter-spacing: .4px; color: var(--gold); text-transform: uppercase; opacity: .9; margin-bottom: 6px; }}
 .result-text {{ line-height: 1.5; font-size: 16px; }}
 @keyframes fadein {{ from {{ opacity: 0; transform: translateY(6px); }} to {{ opacity: 1; transform: none; }} }}
+
+@keyframes wheelspin {{ from {{ transform: rotate(0deg); }} to {{ transform: rotate(var(--spin-deg, 1440deg)); }} }}
+#wheel_img.spinning {{ animation: wheelspin 3.2s cubic-bezier(.17,.67,.32,1.35); }}
 
 #sidebar-mural {{
   position: relative; height: 1120px; margin-top: 8px; z-index: 0;
@@ -317,28 +381,6 @@ h1, h2, h3, h4 {{ color: {IVORY}; text-shadow: 0 1px 0 rgba(0,0,0,0.35); }}
 </style>
 """
 
-# Crest widgets (click → JS sets input values)
-CREST_JS = """
-<script>
-(function(){
-  // Utility to pulse an input event (so every click is distinct)
-  const pulse = (id) => {
-    if (window.Shiny && Shiny.setInputValue) {
-      Shiny.setInputValue(id, Date.now(), {priority: 'event'});
-    } else if (window.pyshiny && pyshiny.setInputValue) {
-      pyshiny.setInputValue(id, Date.now(), {priority: 'event'});
-    }
-  };
-  const r = document.getElementById('renown_badge');
-  const n = document.getElementById('notor_badge');
-  if (r) r.addEventListener('click', ()=>pulse('renown_clicked'));
-  if (n) n.addEventListener('click', ()=>pulse('notor_clicked'));
-
-  const spin = document.getElementById('spin_overlay');
-  if (spin) spin.addEventListener('click', ()=>pulse('spin_clicked'));
-})();
-</script>
-"""
 
 def crest_html(label: str, value: int, b64: str, dom_id: str) -> ui.HTML:
     return ui.HTML(f"""
@@ -446,21 +488,22 @@ tab_ledger = ui.nav_panel(
 
 # Top row: KPI crests + ward select + heat buttons
 kpi_row = ui.layout_columns(
-    ui.card(ui.output_ui("renown_badge")),
+    ui.card(ui.output_ui("renown_badge"), ui.output_ui("_tiers_renown")),
     ui.card(
-        ui.output_ui("notor_badge"),
+        ui.output_ui("notor_badge"), ui.output_ui("_tiers_notor"),
         ui.layout_columns(
             ui.input_action_button("lie_low", "Lie Low (−1/−2 Heat)"),
             ui.input_action_button("proxy_charity", "Proxy Charity (−1 Heat)"),
         )
     ),
-    ui.card(ui.input_select("ward","Active Ward", choices=["Dock","Field","South","North","Castle","Trades","Sea"], selected="Dock"))
+    ui.card(ui.input_select("ward","Active Ward",
+           choices=["Dock","Field","South","North","Castle","Trades","Sea"], selected="Dock"))
 )
 
 app_ui = ui.page_sidebar(
     sidebar,
     ui.tags.head(ui.HTML(GLOBAL_CSS)),
-    ui.tags.head(ui.HTML(CREST_JS)),
+    # (no CREST_JS here)
     ui.div(
         ui.h2(APP_TITLE),
         kpi_row,
@@ -484,23 +527,38 @@ def server(input, output, session):
     @output
     @render.ui
     def renown_badge():
-        return crest_html("Renown", renown.get(), RENOWN_B64, "renown_badge")
+        # wrapper must be position:relative so the ghost button can fill it
+        return ui.div(
+            ui.HTML(f"""
+              <div class="score-badge">
+                <img src="data:image/png;base64,{RENOWN_B64}" alt="Renown">
+                <div class="meta">
+                  <div class="label">Renown</div>
+                  <div class="val">{renown.get()}</div>
+                </div>
+              </div>
+            """),
+            ui.input_action_button("renown_clicked", "", class_="ghost-btn"),
+            style="position:relative; display:inline-block;"
+        )
 
     @output
     @render.ui
     def notor_badge():
-        return crest_html("Notoriety", notoriety.get(), NOTOR_B64, "notor_badge")
+        return ui.div(
+            ui.HTML(f"""
+              <div class="score-badge">
+                <img src="data:image/png;base64,{NOTOR_B64}" alt="Notoriety">
+                <div class="meta">
+                  <div class="label">Notoriety</div>
+                  <div class="val">{notoriety.get()}</div>
+                </div>
+              </div>
+            """),
+            ui.input_action_button("notor_clicked", "", class_="ghost-btn"),
+            style="position:relative; display:inline-block;"
+        )
 
-    # Toggle tier panels via crest clicks
-    @reactive.Effect
-    @reactive.event(input.renown_clicked)
-    def _toggle_r():
-        show_renown.set(not show_renown.get())
-
-    @reactive.Effect
-    @reactive.event(input.notor_clicked)
-    def _toggle_n():
-        show_notor.set(not show_notor.get())
 
     # Heat buttons
     @reactive.Effect
@@ -687,36 +745,22 @@ def server(input, output, session):
     @output
     @render.ui
     def wheel_ui():
-        # Build wheel graphic
         opts = _load_options()
         wheel_options.set(opts)
         size = 600
         b64 = img_b64(draw_wheel([str(i+1) for i in range(len(opts))], size=size))
 
         angle = last_angle.get()
-        btn_diam = max(96, int(size*0.18))
-        # Wheel container with centre overlay — clicking fires JS → input.spin_clicked
-        html = f"""
-        <div id="wheel_wrap" style="position:relative;width:{size}px;height:{size}px;margin:0 auto;">
-          <div id="pointer"></div>
-          <img id="wheel_img" src="data:image/png;base64,{b64}" style="transform:rotate({angle}deg);transition:transform 3.2s cubic-bezier(.17,.67,.32,1.35);" />
-          <div id="spin_overlay" style="
-            position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-            width:{btn_diam}px; height:{btn_diam}px; border-radius:{btn_diam/2}px;
-            border:1px solid rgba(208,168,92,0.45);
-            background:linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
-            backdrop-filter: blur(8px) saturate(1.1);
-            -webkit-backdrop-filter: blur(8px) saturate(1.1);
-            box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
-            color:{IVORY}; font-weight:700; letter-spacing:.5px; text-transform:uppercase;
-            cursor:pointer; user-select:none; display:grid; place-items:center;">
-            SPIN!
-          </div>
-        </div>
-        """
-        return ui.HTML(html)
+        spinning = "spinning" if spin_token.get() else ""
 
-    # Handle spin
+        return ui.HTML(f"""
+          <div id="wheel_wrap" style="height:{size}px;">
+            <div id="pointer"></div>
+            <img id="wheel_img" class="{spinning}" src="data:image/png;base64,{b64}"
+                 style="--spin-deg:{angle}deg" />
+          </div>
+        """) + ui.input_action_button("spin_clicked", "SPIN!", class_="spin-btn")
+
     @reactive.Effect
     @reactive.event(input.spin_clicked)
     def _spin():
@@ -726,18 +770,16 @@ def server(input, output, session):
         idx = random.randrange(n)
         selected_index.set(idx)
         seg = 360 / n
-        # add multiple full rotations for drama
-        last_angle.set(random.randint(4,7)*360 + (idx + 0.5)*seg)
+        last_angle.set(random.randint(4, 7) * 360 + (idx + 0.5) * seg)
+        spin_token.set(dt.datetime.now().isoformat())  # force a fresh animation
 
-        # Journal it
-        try:
-            row = [dt.datetime.now().isoformat(timespec="seconds"),
-                   ward_focus.get(), "Complication", "-", "-", "-", 0, 0, "-", "-", opts[idx]]
-            df = ledger_df.get().copy()
-            df.loc[len(df)] = row
-            ledger_df.set(df)
-        except Exception:
-            pass
+        # Log a journal line
+        row = [dt.datetime.now().isoformat(timespec="seconds"),
+               ward_focus.get(), "Complication", "-", "-", "-", 0, 0, "-", "-", opts[idx]]
+        df = ledger_df.get().copy()
+        df.loc[len(df)] = row
+        ledger_df.set(df)
+
 
     @output
     @render.ui

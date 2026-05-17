@@ -1,0 +1,17 @@
+# .github/workflows/keep-alive.yml
+name: Supabase Keep-Alive
+on:
+  schedule:
+    - cron: '0 12 * * 1,4'   # every Monday and Thursday at noon UTC
+  workflow_dispatch:           # also lets you trigger manually from GitHub UI
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping all projects
+        run: |
+          curl -sf "${{ secrets.SUPABASE_URL_HARPTOS }}/rest/v1/" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_HARPTOS }}" && echo "Bastion OK"
+          curl -sf "${{ secrets.SUPABASE_URL_WALLET }}/rest/v1/" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_WALLET }}" && echo "Vault OK"

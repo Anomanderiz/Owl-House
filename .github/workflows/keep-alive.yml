@@ -11,9 +11,9 @@ jobs:
     steps:
       - name: Ping all projects
         run: |
-          curl -s "${{ secrets.SUPABASE_URL_HARPTOS }}/rest/v1/players?select=id&limit=1" \
+          curl -s "${{ secrets.SUPABASE_URL_HARPTOS }}/rest/v1/parties?select=id&limit=1" \
             -H "apikey: ${{ secrets.SUPABASE_ANON_HARPTOS }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_HARPTOS }}" && echo "Harptos OK"
-          curl -s "${{ secrets.SUPABASE_URL_WALLET }}/rest/v1/parties?select=id&limit=1" \
+          curl -s "${{ secrets.SUPABASE_URL_WALLET }}/rest/v1/players?select=id&limit=1" \
             -H "apikey: ${{ secrets.SUPABASE_ANON_WALLET }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_WALLET }}" && echo "Wallet OK"

@@ -2,8 +2,8 @@
 name: Supabase Keep-Alive
 on:
   schedule:
-    - cron: '0 12 * * 1,4'   # every Monday and Thursday at noon UTC
-  workflow_dispatch:           # also lets you trigger manually from GitHub UI
+    - cron: '0 12 * * 1,4'
+  workflow_dispatch:
 
 jobs:
   ping:
@@ -11,7 +11,9 @@ jobs:
     steps:
       - name: Ping all projects
         run: |
-          curl -sf "${{ secrets.SUPABASE_URL_HARPTOS }}/rest/v1/" \
-            -H "apikey: ${{ secrets.SUPABASE_ANON_HARPTOS }}" && echo "Harptos OK"
-          curl -sf "${{ secrets.SUPABASE_URL_WALLET }}/rest/v1/" \
-            -H "apikey: ${{ secrets.SUPABASE_ANON_WALLET }}" && echo "Wallet OK"
+          curl -s "${{ secrets.SUPABASE_URL_HARPTOS }}/rest/v1/players?select=id&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_HARPTOS }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_HARPTOS }}" && echo "Harptos OK"
+          curl -s "${{ secrets.SUPABASE_URL_WALLET }}/rest/v1/parties?select=id&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_WALLET }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_WALLET }}" && echo "Wallet OK"
